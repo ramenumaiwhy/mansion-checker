@@ -1,7 +1,6 @@
 "use strict";
 (() => {
   // src/app.ts
-  var TSUBO_PER_SQM = 3.30579;
   var PREFECTURE_CODES = {
     "01": "\u5317\u6D77\u9053",
     "02": "\u9752\u68EE\u770C",
@@ -50,13 +49,6 @@
     "45": "\u5BAE\u5D0E\u770C",
     "46": "\u9E7F\u5150\u5CF6\u770C",
     "47": "\u6C96\u7E04\u770C"
-  };
-  var BUILDING_SPECS = {
-    SRC: { useful_life: 47, unit_cost: 335e3 },
-    RC: { useful_life: 47, unit_cost: 334e3 },
-    LS: { useful_life: 27, unit_cost: 325e3 },
-    S: { useful_life: 34, unit_cost: 325e3 },
-    W: { useful_life: 22, unit_cost: 215e3 }
   };
   var ZONING_CATEGORIES = {
     "\u4F4F\u5C45\u7CFB": [
@@ -145,131 +137,11 @@
     if (m) return parseInt(m[1]);
     return null;
   }
-  function classifyStructure(structure) {
-    if (structure.includes("\uFF33\uFF32\uFF23")) return BUILDING_SPECS.SRC;
-    if (structure.includes("\uFF32\uFF23")) return BUILDING_SPECS.RC;
-    if (structure.includes("\u8EFD\u91CF\u9244\u9AA8")) return BUILDING_SPECS.LS;
-    if (structure.includes("\u9244\u9AA8")) return BUILDING_SPECS.S;
-    return BUILDING_SPECS.W;
-  }
-  function estimateBuildingResidual(item) {
-    const tradePrice = parseInt(item.TradePrice || "0") || 0;
-    const totalFloorArea = item.TotalFloorArea;
-    const buildingYear = item.BuildingYear;
-    const structure = item.Structure || "";
-    if (!tradePrice || !totalFloorArea || !buildingYear) return null;
-    const floorArea = parseFloat(totalFloorArea);
-    if (isNaN(floorArea) || floorArea <= 0) return null;
-    const currentYear = (/* @__PURE__ */ new Date()).getFullYear();
-    const builtYear = convertJapaneseYear(buildingYear);
-    if (!builtYear) return null;
-    const age = currentYear - builtYear;
-    const specs = classifyStructure(structure);
-    const remainingRatio = Math.max(0, 1 - age / specs.useful_life);
-    const buildingValue = specs.unit_cost * floorArea * remainingRatio;
-    const estimatedLandPrice = tradePrice - buildingValue;
-    if (estimatedLandPrice <= 0) return null;
-    return {
-      estimated_land_price: Math.floor(estimatedLandPrice),
-      building_value: Math.floor(buildingValue),
-      remaining_ratio: remainingRatio
-    };
-  }
-  function calcTsuboStats(items) {
-    const results = [];
-    for (const item of items) {
-      if (item.Type !== "\u5B85\u5730(\u571F\u5730\u306E\u307F)") continue;
-      const tradePrice = parseInt(item.TradePrice || "0") || 0;
-      if (tradePrice <= 1e5) continue;
-      const areaM2 = parseFloat(item.Area || "0") || 0;
-      if (areaM2 <= 0) continue;
-      const tsuboPrice = tradePrice / areaM2 * TSUBO_PER_SQM;
-      const floorAreaRatio = parseFloat(item.FloorAreaRatio || "0") || 0;
-      const ikishuPrice = floorAreaRatio > 0 ? tsuboPrice / (floorAreaRatio / 100) : null;
-      results.push({
-        tsubo_price: tsuboPrice,
-        ikishu_price: ikishuPrice,
-        trade_price: tradePrice,
-        area_m2: areaM2,
-        floor_area_ratio: floorAreaRatio,
-        use_district: getUseDistrict(item),
-        period: item.Period || "",
-        raw: item
-      });
-    }
-    return results;
-  }
-  function calcBuildingLandStats(items) {
-    const results = [];
-    for (const item of items) {
-      if (item.Type !== "\u5B85\u5730(\u571F\u5730\u3068\u5EFA\u7269)") continue;
-      const areaM2 = parseFloat(item.Area || "0") || 0;
-      if (areaM2 <= 0) continue;
-      const estimation = estimateBuildingResidual(item);
-      if (!estimation) continue;
-      const tsuboPrice = estimation.estimated_land_price / areaM2 * TSUBO_PER_SQM;
-      const floorAreaRatio = parseFloat(item.FloorAreaRatio || "0") || 0;
-      const ikishuPrice = floorAreaRatio > 0 ? tsuboPrice / (floorAreaRatio / 100) : null;
-      results.push({
-        tsubo_price: tsuboPrice,
-        ikishu_price: ikishuPrice,
-        estimated_land_price: estimation.estimated_land_price,
-        building_value: estimation.building_value,
-        remaining_ratio: estimation.remaining_ratio,
-        trade_price: parseInt(item.TradePrice || "0") || 0,
-        area_m2: areaM2,
-        floor_area_ratio: floorAreaRatio,
-        use_district: getUseDistrict(item),
-        period: item.Period || "",
-        structure: item.Structure || "",
-        building_year: item.BuildingYear || "",
-        raw: item
-      });
-    }
-    return results;
-  }
-  function removeOutliers(results) {
-    const prices = results.map((r) => r.tsubo_price);
-    if (prices.length < 3) return results;
-    const sorted = [...prices].sort((a, b) => a - b);
-    const mid = sorted[Math.floor(sorted.length / 2)];
-    return results.filter((r) => r.tsubo_price >= mid / 5);
-  }
   function median(arr) {
     if (arr.length === 0) return null;
     const sorted = [...arr].sort((a, b) => a - b);
     const mid = Math.floor(sorted.length / 2);
     return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-  }
-  function summarizeStats(results) {
-    var _a;
-    const tsuboPrices = results.map((r) => r.tsubo_price);
-    const ikishuPrices = results.filter((r) => r.ikishu_price != null).map((r) => r.ikishu_price);
-    const summary = {
-      count: tsuboPrices.length,
-      tsubo_min: tsuboPrices.length ? Math.min(...tsuboPrices) : null,
-      tsubo_max: tsuboPrices.length ? Math.max(...tsuboPrices) : null,
-      tsubo_median: median(tsuboPrices)
-    };
-    if (ikishuPrices.length) {
-      summary.ikishu_min = Math.min(...ikishuPrices);
-      summary.ikishu_max = Math.max(...ikishuPrices);
-      summary.ikishu_median = (_a = median(ikishuPrices)) != null ? _a : void 0;
-    }
-    return summary;
-  }
-  function summarizeByUseDistrict(results) {
-    const groups = {};
-    for (const r of results) {
-      const key = r.use_district || "\u4E0D\u660E";
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(r);
-    }
-    const summaries = {};
-    for (const district of Object.keys(groups)) {
-      summaries[district] = summarizeStats(groups[district]);
-    }
-    return summaries;
   }
   function formatManYen(value) {
     if (value == null) return "-";
@@ -281,6 +153,123 @@
     if (isNaN(num) || num <= 0) return "-";
     if (num >= 1e8) return (num / 1e8).toFixed(1) + "\u5104";
     return Math.round(num / 1e4).toLocaleString() + "\u4E07";
+  }
+  function removeSqmOutliers(results) {
+    const prices = results.map((r) => r.sqm_price);
+    if (prices.length < 3) return results;
+    const sorted = [...prices].sort((a, b) => a - b);
+    const mid = sorted[Math.floor(sorted.length / 2)];
+    return results.filter((r) => r.sqm_price >= mid / 5);
+  }
+  function calcMansionStats(items) {
+    const currentYear = (/* @__PURE__ */ new Date()).getFullYear();
+    const results = [];
+    for (const item of items) {
+      if (item.Type !== "\u4E2D\u53E4\u30DE\u30F3\u30B7\u30E7\u30F3\u7B49") continue;
+      const tradePrice = parseInt(item.TradePrice || "0") || 0;
+      if (tradePrice <= 0) continue;
+      const areaM2 = parseFloat(item.Area || "0") || 0;
+      if (areaM2 <= 0) continue;
+      const sqmPrice = tradePrice / areaM2;
+      const buildYear = convertJapaneseYear(item.BuildingYear || "");
+      const age = buildYear != null ? currentYear - buildYear : null;
+      results.push({
+        sqm_price: sqmPrice,
+        trade_price: tradePrice,
+        area_m2: areaM2,
+        floor_plan: item.FloorPlan || "",
+        build_year: buildYear,
+        age,
+        use_district: getUseDistrict(item),
+        period: item.Period || "",
+        structure: item.Structure || "",
+        raw: item
+      });
+    }
+    return results;
+  }
+  function summarizeMansionStats(results) {
+    const prices = results.map((r) => r.sqm_price);
+    return {
+      count: prices.length,
+      sqm_min: prices.length ? Math.min(...prices) : null,
+      sqm_max: prices.length ? Math.max(...prices) : null,
+      sqm_median: median(prices)
+    };
+  }
+  var AGE_BUCKETS = [
+    { label: "\u301C5\u5E74", min: 0, max: 5 },
+    { label: "6\u301C10\u5E74", min: 6, max: 10 },
+    { label: "11\u301C15\u5E74", min: 11, max: 15 },
+    { label: "16\u301C20\u5E74", min: 16, max: 20 },
+    { label: "21\u301C25\u5E74", min: 21, max: 25 },
+    { label: "26\u301C30\u5E74", min: 26, max: 30 },
+    { label: "31\u5E74\u4EE5\u4E0A", min: 31, max: 999 }
+  ];
+  function groupByAge(results) {
+    return AGE_BUCKETS.map((bucket) => {
+      const group = results.filter((r) => r.age != null && r.age >= bucket.min && r.age <= bucket.max);
+      const prices = group.map((r) => r.sqm_price);
+      return {
+        label: bucket.label,
+        min_age: bucket.min,
+        max_age: bucket.max,
+        count: group.length,
+        sqm_min: prices.length ? Math.min(...prices) : null,
+        sqm_max: prices.length ? Math.max(...prices) : null,
+        sqm_median: median(prices)
+      };
+    });
+  }
+  function summarizeByFloorPlan(results) {
+    const groups = {};
+    for (const r of results) {
+      const key = r.floor_plan || "\u4E0D\u660E";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(r);
+    }
+    const summaries = {};
+    for (const plan of Object.keys(groups)) {
+      summaries[plan] = summarizeMansionStats(groups[plan]);
+    }
+    return summaries;
+  }
+  function compareMansionPrice(userInput, overallStats, ageGroups) {
+    var _a, _b, _c, _d;
+    const userSqmPrice = userInput.asking_price * 1e4 / userInput.area_m2;
+    const currentYear = (/* @__PURE__ */ new Date()).getFullYear();
+    const userAge = currentYear - userInput.build_year;
+    const ageGroup = ageGroups.find((g) => userAge >= g.min_age && userAge <= g.max_age);
+    const ageGroupMedian = (_a = ageGroup == null ? void 0 : ageGroup.sqm_median) != null ? _a : null;
+    const ageGroupLabel = (_b = ageGroup == null ? void 0 : ageGroup.label) != null ? _b : "\u4E0D\u660E";
+    const compareMedian = ageGroupMedian != null ? ageGroupMedian : overallStats.sqm_median;
+    if (compareMedian == null || compareMedian <= 0) {
+      return {
+        user_sqm_price: userSqmPrice,
+        market_median: null,
+        diff_ratio: null,
+        verdict: "unknown",
+        age_group_median: ageGroupMedian,
+        age_group_label: ageGroupLabel,
+        sample_count: (_c = ageGroup == null ? void 0 : ageGroup.count) != null ? _c : 0
+      };
+    }
+    const diffRatio = (userSqmPrice - compareMedian) / compareMedian;
+    let verdict;
+    if (diffRatio > 0.2) verdict = "high";
+    else if (diffRatio > 0.1) verdict = "slightly_high";
+    else if (diffRatio >= -0.1) verdict = "fair";
+    else if (diffRatio >= -0.2) verdict = "slightly_low";
+    else verdict = "low";
+    return {
+      user_sqm_price: userSqmPrice,
+      market_median: compareMedian,
+      diff_ratio: diffRatio,
+      verdict,
+      age_group_median: ageGroupMedian,
+      age_group_label: ageGroupLabel,
+      sample_count: (_d = ageGroup == null ? void 0 : ageGroup.count) != null ? _d : 0
+    };
   }
   var PROXY_URL = "https://reinfolib-proxy.southern-a-22.workers.dev";
   var GSI_GEOCODER_URL = "https://msearch.gsi.go.jp/address-search/AddressSearch";
@@ -299,31 +288,6 @@
     "\u5546\u696D\u7CFB": ["\u8FD1\u96A3\u5546\u696D\u5730\u57DF", "\u5546\u696D\u5730\u57DF"],
     "\u5DE5\u696D\u7CFB": ["\u6E96\u5DE5\u696D\u5730\u57DF", "\u5DE5\u696D\u5730\u57DF", "\u5DE5\u696D\u5C02\u7528\u5730\u57DF"]
   };
-  var RAW_FIELD_LABELS = [
-    ["Type", "\u7A2E\u985E"],
-    ["TradePrice", "\u53D6\u5F15\u4FA1\u683C"],
-    ["Area", "\u9762\u7A4D(\u33A1)"],
-    ["UnitPrice", "\u33A1\u5358\u4FA1"],
-    ["FloorAreaRatio", "\u5BB9\u7A4D\u7387(%)"],
-    ["CoverageRatio", "\u5EFA\u307A\u3044\u7387(%)"],
-    ["UseDistrict", "\u7528\u9014\u5730\u57DF"],
-    ["CityPlanning", "\u90FD\u5E02\u8A08\u753B"],
-    ["Period", "\u53D6\u5F15\u6642\u70B9"],
-    ["Structure", "\u69CB\u9020"],
-    ["BuildingYear", "\u5EFA\u7BC9\u5E74"],
-    ["TotalFloorArea", "\u5EF6\u5E8A\u9762\u7A4D(\u33A1)"],
-    ["FloorPlan", "\u9593\u53D6\u308A"],
-    ["LandShape", "\u571F\u5730\u306E\u5F62\u72B6"],
-    ["Frontage", "\u9593\u53E3(m)"],
-    ["Direction", "\u524D\u9762\u9053\u8DEF\u306E\u65B9\u4F4D"],
-    ["Classification", "\u524D\u9762\u9053\u8DEF\u306E\u7A2E\u985E"],
-    ["Breadth", "\u524D\u9762\u9053\u8DEF\u306E\u5E45\u54E1(m)"],
-    ["Use", "\u5229\u7528\u73FE\u6CC1"],
-    ["Purpose", "\u4ECA\u5F8C\u306E\u5229\u7528\u76EE\u7684"],
-    ["Renovation", "\u6539\u88C5"],
-    ["Remarks", "\u5099\u8003"]
-  ];
-  var RAW_FIELD_SKIP = ["Prefecture", "Municipality", "DistrictName", "Region", "MunicipalityCode"];
   function init() {
     const apiKeyInput = document.getElementById("apiKeyInput");
     const saveKeyBtn = document.getElementById("saveKeyBtn");
@@ -339,11 +303,19 @@
     const loadingText = document.getElementById("loadingText");
     const resultsEl = document.getElementById("results");
     const resultSummary = document.getElementById("resultSummary");
-    const landOnlyContent = document.getElementById("landOnlyContent");
-    const buildingLandContent = document.getElementById("buildingLandContent");
+    const marketDashboardContent = document.getElementById("marketDashboardContent");
+    const ageCurveContent = document.getElementById("ageCurveContent");
+    const compareHint = document.getElementById("compareHint");
+    const compareForm = document.getElementById("compareForm");
+    const compareAreaInput = document.getElementById("compareAreaInput");
+    const compareBuildYearInput = document.getElementById("compareBuildYearInput");
+    const compareFloorPlanInput = document.getElementById("compareFloorPlanInput");
+    const comparePriceInput = document.getElementById("comparePriceInput");
+    const compareBtn = document.getElementById("compareBtn");
+    const compareResult = document.getElementById("compareResult");
     const zoningCategorySelect = document.getElementById("zoningCategorySelect");
     const zoningDetailDiv = document.getElementById("zoningDetail");
-    const searchModeTabs = document.querySelectorAll(".search-tab");
+    const searchModeTabs = document.querySelectorAll(".search-mode-tab");
     const addressSearchArea = document.getElementById("addressSearchArea");
     const stationSearchArea = document.getElementById("stationSearchArea");
     let searchMode = "address";
@@ -353,6 +325,8 @@
     let highlightedIndex = -1;
     let isComposing = false;
     let selectedZoningTypes = [];
+    let lastOverallStats = null;
+    let lastAgeGroups = [];
     function sleep(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms));
     }
@@ -377,9 +351,9 @@
       (function(tab) {
         tab.addEventListener("click", function() {
           for (let j = 0; j < searchModeTabs.length; j++) {
-            searchModeTabs[j].className = "search-tab";
+            searchModeTabs[j].className = "search-mode-tab";
           }
-          tab.className = "search-tab active";
+          tab.className = "search-mode-tab active";
           searchMode = tab.dataset.mode || "address";
           if (searchMode === "address") {
             addressSearchArea.style.display = "";
@@ -698,114 +672,38 @@
       if (count >= 5) return { label: "\u4FE1\u983C\u5EA6: \u4F4E", cls: "confidence-low", note: "\u4EF6\u6570\u304C\u5C11\u306A\u304F\u53C2\u8003\u5024\u3067\u3059\u3002\u4E0B\u306E\u5E02\u533A\u753A\u6751\u5168\u4F53\u306E\u30C7\u30FC\u30BF\u3082\u3054\u53C2\u7167\u304F\u3060\u3055\u3044\u3002" };
       return { label: "\u4FE1\u983C\u5EA6: \u4E0D\u8DB3", cls: "confidence-poor", note: "\u4EF6\u6570\u304C\u6975\u3081\u3066\u5C11\u306A\u304F\u7D71\u8A08\u7684\u306B\u4FE1\u983C\u3067\u304D\u307E\u305B\u3093\u3002\u5E02\u533A\u753A\u6751\u5168\u4F53\u306E\u30C7\u30FC\u30BF\u3092\u3054\u53C2\u7167\u304F\u3060\u3055\u3044\u3002" };
     }
-    function renderDetailTable(container, details, isBuilding) {
-      const section = createSafeElement("div");
-      section.className = "detail-section";
-      const toggleBtn = createSafeElement("button", "");
-      toggleBtn.className = "detail-toggle";
-      const arrow = createSafeElement("span", "\u25B6");
-      arrow.className = "arrow";
-      toggleBtn.appendChild(arrow);
-      toggleBtn.appendChild(document.createTextNode(" \u500B\u5225\u53D6\u5F15\u30C7\u30FC\u30BF\uFF08" + details.length + "\u4EF6\uFF09"));
-      toggleBtn.addEventListener("click", function() {
-        const isOpen = section.classList.toggle("open");
-        toggleBtn.classList.toggle("open", isOpen);
-      });
-      const calcHeaders = isBuilding ? [["\u63A8\u5B9A\u576A\u5358\u4FA1(\u4E07\u5186)", "tsubo_price"], ["\u4E00\u7A2E\u5358\u4FA1(\u4E07\u5186)", "ikishu_price"], ["\u63A8\u5B9A\u571F\u5730\u4FA1\u683C", "estimated_land_price"], ["\u63A8\u5B9A\u5EFA\u7269\u6B8B\u4FA1", "building_value"]] : [["\u576A\u5358\u4FA1(\u4E07\u5186)", "tsubo_price"], ["\u4E00\u7A2E\u5358\u4FA1(\u4E07\u5186)", "ikishu_price"]];
-      const rawColumns = [];
-      const knownKeys = {};
-      for (const [key, label] of RAW_FIELD_LABELS) {
-        knownKeys[key] = true;
-        rawColumns.push([key, label]);
-      }
-      if (details.length > 0 && details[0].raw) {
-        for (const key of Object.keys(details[0].raw)) {
-          if (!knownKeys[key] && RAW_FIELD_SKIP.indexOf(key) === -1) {
-            rawColumns.push([key, key]);
-          }
-        }
-      }
-      const wrap = createSafeElement("div");
-      wrap.className = "table-wrap";
-      wrap.style.marginTop = "12px";
-      const table = createSafeElement("table");
-      const thead = createSafeElement("thead");
-      const headerRow = createSafeElement("tr");
-      for (const [label] of calcHeaders) {
-        const th = createSafeElement("th", label);
-        th.style.background = "var(--gold-pale)";
-        th.style.color = "var(--terracotta)";
-        headerRow.appendChild(th);
-      }
-      for (const [, label] of rawColumns) {
-        headerRow.appendChild(createSafeElement("th", label));
-      }
-      thead.appendChild(headerRow);
-      table.appendChild(thead);
-      const tbody = createSafeElement("tbody");
-      const sorted = [...details].sort((a, b) => b.tsubo_price - a.tsubo_price);
-      for (const d of sorted) {
-        const raw = d.raw || {};
-        const row = createSafeElement("tr");
-        const dRecord = d;
-        for (const [, field] of calcHeaders) {
-          let val;
-          if (field === "tsubo_price" || field === "ikishu_price") {
-            const v = dRecord[field];
-            val = v != null ? formatManYen(v) : "-";
-          } else if (field === "estimated_land_price" || field === "building_value") {
-            val = formatPrice(dRecord[field]);
-          } else {
-            const v = dRecord[field];
-            val = v != null ? String(v) : "-";
-          }
-          const td = createSafeElement("td", val);
-          td.style.background = "var(--gold-pale)";
-          row.appendChild(td);
-        }
-        for (const [rawKey] of rawColumns) {
-          const rawVal = raw[rawKey];
-          let cellText;
-          if (rawKey === "TradePrice") {
-            cellText = formatPrice(rawVal);
-          } else if (rawVal == null || rawVal === "") {
-            cellText = "-";
-          } else {
-            cellText = String(rawVal);
-          }
-          row.appendChild(createSafeElement("td", cellText));
-        }
-        tbody.appendChild(row);
-      }
-      table.appendChild(tbody);
-      wrap.appendChild(table);
-      section.appendChild(wrap);
-      container.appendChild(toggleBtn);
-      container.appendChild(section);
-    }
-    function renderSummary(result) {
+    function renderMansionSummary(result) {
       resultSummary.textContent = "";
-      const r = result;
-      const h3 = createSafeElement("h3", r.scopeLabel || r.prefecture + r.municipality + r.district_name + " \u306E\u76F8\u5834");
+      const scopeLabel = result.scopeLabel;
+      const years = result.years;
+      const totalRecords = result.total_records;
+      const mansionCount = result.mansion_count;
+      const overall = result.overall;
+      const h3 = createSafeElement("h3", scopeLabel || "\u4E2D\u53E4\u30DE\u30F3\u30B7\u30E7\u30F3\u76F8\u5834");
       resultSummary.appendChild(h3);
       const grid = createSafeElement("div");
       grid.className = "summary-grid";
+      const conf = getConfidence(mansionCount);
+      const badge = createSafeElement("span", conf.label);
+      badge.className = "confidence-badge " + conf.cls;
+      badge.style.marginLeft = "0";
+      badge.style.marginBottom = "8px";
+      badge.style.display = "inline-flex";
+      resultSummary.insertBefore(badge, h3.nextSibling);
       const items = [
-        { label: "\u5206\u6790\u5BFE\u8C61\u5E74", value: r.years.join(", "), unit: "" },
-        { label: "\u5BFE\u8C61\u5730\u533A\u306E\u53D6\u5F15\u4EF6\u6570", value: String(r.filtered_records), unit: "\u4EF6" }
+        { label: "\u5206\u6790\u5BFE\u8C61\u5E74", value: years.join(", "), unit: "" },
+        { label: "\u53D6\u5F15\u4EF6\u6570\uFF08\u5168\u4F53\uFF09", value: String(totalRecords), unit: "\u4EF6" },
+        { label: "\u30DE\u30F3\u30B7\u30E7\u30F3\u53D6\u5F15\u4EF6\u6570", value: String(mansionCount), unit: "\u4EF6" }
       ];
-      const zoneCat = zoningCategorySelect.value;
-      if (zoneCat) {
-        const zoneLabel = selectedZoningTypes.length > 0 ? selectedZoningTypes.join(", ") : zoneCat;
-        items.push({ label: "\u7528\u9014\u5730\u57DF\u30D5\u30A3\u30EB\u30BF", value: zoneLabel, unit: "" });
+      if (overall.sqm_median != null) {
+        items.push({ label: "\u33A1\u5358\u4FA1 \u4E2D\u592E\u5024", value: formatManYen(overall.sqm_median), unit: "\u4E07\u5186/\u33A1" });
       }
-      const landMedian = r.land_only.overall.tsubo_median;
-      if (landMedian != null) {
-        items.push({ label: "\u576A\u5358\u4FA1\uFF08\u4E2D\u592E\u5024\uFF09", value: formatManYen(landMedian), unit: "\u4E07\u5186" });
-      }
-      const bldMedian = r.building_land.overall.tsubo_median;
-      if (bldMedian != null) {
-        items.push({ label: "\u63A8\u5B9A\u576A\u5358\u4FA1\uFF08\u4E2D\u592E\u5024\uFF09", value: formatManYen(bldMedian), unit: "\u4E07\u5186" });
+      if (overall.sqm_min != null && overall.sqm_max != null) {
+        items.push({
+          label: "\u33A1\u5358\u4FA1 \u30EC\u30F3\u30B8",
+          value: formatManYen(overall.sqm_min) + "\u301C" + formatManYen(overall.sqm_max),
+          unit: "\u4E07\u5186/\u33A1"
+        });
       }
       for (const it of items) {
         const item = createSafeElement("div");
@@ -826,70 +724,156 @@
       }
       resultSummary.appendChild(grid);
     }
-    function renderCitywideRef(container, citywideByDistrict, citywideOverall, isBuilding, municipalityName) {
-      const ref = createSafeElement("div");
-      ref.className = "citywide-ref";
-      const title = createSafeElement("div", municipalityName + "\u5168\u4F53\u306E\u540C\u4E00\u7528\u9014\u5730\u57DF\u30C7\u30FC\u30BF\uFF08\u53C2\u8003\uFF09");
-      title.className = "ref-title";
-      ref.appendChild(title);
-      if (citywideOverall.count === 0) {
-        ref.appendChild(createSafeElement("p", "\u8A72\u5F53\u30C7\u30FC\u30BF\u304C\u3042\u308A\u307E\u305B\u3093"));
-        container.appendChild(ref);
-        return;
-      }
-      const wrap = createSafeElement("div");
-      wrap.className = "table-wrap";
-      const table = createSafeElement("table");
-      const thead = createSafeElement("thead");
-      const headerRow = createSafeElement("tr");
-      const headers = ["\u7528\u9014\u5730\u57DF", "\u4EF6\u6570", isBuilding ? "\u63A8\u5B9A\u576A\u5358\u4FA1(\u4E07\u5186)" : "\u576A\u5358\u4FA1(\u4E07\u5186)"];
-      for (const h of headers) {
-        headerRow.appendChild(createSafeElement("th", h));
-      }
-      thead.appendChild(headerRow);
-      table.appendChild(thead);
-      const tbody = createSafeElement("tbody");
-      for (const district of Object.keys(citywideByDistrict)) {
-        const stats = citywideByDistrict[district];
-        const row = createSafeElement("tr");
-        row.appendChild(createSafeElement("td", district));
-        row.appendChild(createSafeElement("td", stats.count + "\u4EF6"));
-        row.appendChild(createSafeElement(
-          "td",
-          formatManYen(stats.tsubo_min) + "\u301C" + formatManYen(stats.tsubo_max) + "\uFF08\u4E2D\u592E\u5024 " + formatManYen(stats.tsubo_median) + "\uFF09"
-        ));
-        tbody.appendChild(row);
-      }
-      table.appendChild(tbody);
-      wrap.appendChild(table);
-      ref.appendChild(wrap);
-      const note = createSafeElement(
-        "div",
-        "\u4E0D\u52D5\u7523\u9451\u5B9A\u8A55\u4FA1\u57FA\u6E96\u306E\u300C\u540C\u4E00\u9700\u7D66\u570F\u5185\u306E\u985E\u4F3C\u5730\u57DF\u300D\u306B\u76F8\u5F53\u3059\u308B\u53C2\u8003\u5024\u3067\u3059\u3002\u5730\u57DF\u8981\u56E0\uFF08\u99C5\u8DDD\u96E2\u30FB\u5468\u8FBA\u74B0\u5883\u7B49\uFF09\u306E\u88DC\u6B63\u306F\u884C\u3063\u3066\u3044\u306A\u3044\u305F\u3081\u3001\u3042\u304F\u307E\u3067\u76EE\u5B89\u3068\u3057\u3066\u3054\u5229\u7528\u304F\u3060\u3055\u3044\u3002"
-      );
-      note.className = "ref-note";
-      ref.appendChild(note);
-      container.appendChild(ref);
-    }
-    function renderStatsTable(container, byUseDistrict, overall, isBuilding, details, citywideData, municipalityName) {
-      var _a, _b;
-      container.textContent = "";
-      const count = overall.count;
+    function renderMarketDashboard(stats, byFloorPlan, mansionResults, citywideStats, municipalityName) {
+      marketDashboardContent.textContent = "";
+      const count = stats.count;
       const conf = getConfidence(count);
-      const badge = createSafeElement("span", conf.label);
-      badge.className = "confidence-badge " + conf.cls;
-      container.appendChild(badge);
+      if (count === 0) {
+        const noData = createSafeElement("p", "\u5BFE\u8C61\u30A8\u30EA\u30A2\u306E\u30DE\u30F3\u30B7\u30E7\u30F3\u53D6\u5F15\u30C7\u30FC\u30BF\u304C\u3042\u308A\u307E\u305B\u3093");
+        noData.className = "data-note";
+        marketDashboardContent.appendChild(noData);
+      } else {
+        const overallWrap = createSafeElement("div");
+        overallWrap.className = "table-wrap";
+        const overallTable = createSafeElement("table");
+        const overallThead = createSafeElement("thead");
+        const overallHeaderRow = createSafeElement("tr");
+        for (const h of ["\u4EF6\u6570", "\u33A1\u5358\u4FA1 \u6700\u5C0F", "\u33A1\u5358\u4FA1 \u6700\u5927", "\u33A1\u5358\u4FA1 \u4E2D\u592E\u5024"]) {
+          overallHeaderRow.appendChild(createSafeElement("th", h));
+        }
+        overallThead.appendChild(overallHeaderRow);
+        overallTable.appendChild(overallThead);
+        const overallTbody = createSafeElement("tbody");
+        const overallRow = createSafeElement("tr");
+        overallRow.appendChild(createSafeElement("td", count + "\u4EF6"));
+        overallRow.appendChild(createSafeElement("td", formatManYen(stats.sqm_min) + "\u4E07\u5186/\u33A1"));
+        overallRow.appendChild(createSafeElement("td", formatManYen(stats.sqm_max) + "\u4E07\u5186/\u33A1"));
+        overallRow.appendChild(createSafeElement("td", formatManYen(stats.sqm_median) + "\u4E07\u5186/\u33A1"));
+        overallTbody.appendChild(overallRow);
+        overallTable.appendChild(overallTbody);
+        overallWrap.appendChild(overallTable);
+        marketDashboardContent.appendChild(overallWrap);
+        const fpKeys = Object.keys(byFloorPlan);
+        if (fpKeys.length > 0) {
+          const fpTitle = createSafeElement("p", "\u9593\u53D6\u308A\u5225\u33A1\u5358\u4FA1");
+          fpTitle.className = "data-note";
+          fpTitle.style.marginTop = "16px";
+          fpTitle.style.marginBottom = "8px";
+          fpTitle.style.fontWeight = "700";
+          fpTitle.style.color = "var(--brown-warm)";
+          marketDashboardContent.appendChild(fpTitle);
+          const fpWrap = createSafeElement("div");
+          fpWrap.className = "table-wrap";
+          const fpTable = createSafeElement("table");
+          const fpThead = createSafeElement("thead");
+          const fpHeaderRow = createSafeElement("tr");
+          for (const h of ["\u9593\u53D6\u308A", "\u4EF6\u6570", "\u33A1\u5358\u4FA1 \u6700\u5C0F", "\u33A1\u5358\u4FA1 \u6700\u5927", "\u33A1\u5358\u4FA1 \u4E2D\u592E\u5024"]) {
+            fpHeaderRow.appendChild(createSafeElement("th", h));
+          }
+          fpThead.appendChild(fpHeaderRow);
+          fpTable.appendChild(fpThead);
+          const fpTbody = createSafeElement("tbody");
+          for (const fp of fpKeys) {
+            const s = byFloorPlan[fp];
+            const row = createSafeElement("tr");
+            row.appendChild(createSafeElement("td", fp || "\u4E0D\u660E"));
+            row.appendChild(createSafeElement("td", s.count + "\u4EF6"));
+            row.appendChild(createSafeElement("td", formatManYen(s.sqm_min) + "\u4E07\u5186/\u33A1"));
+            row.appendChild(createSafeElement("td", formatManYen(s.sqm_max) + "\u4E07\u5186/\u33A1"));
+            row.appendChild(createSafeElement("td", formatManYen(s.sqm_median) + "\u4E07\u5186/\u33A1"));
+            fpTbody.appendChild(row);
+          }
+          fpTable.appendChild(fpTbody);
+          fpWrap.appendChild(fpTable);
+          marketDashboardContent.appendChild(fpWrap);
+        }
+        if (mansionResults.length > 0) {
+          const section = createSafeElement("div");
+          section.className = "detail-section";
+          const toggleBtn = createSafeElement("button", "");
+          toggleBtn.className = "detail-toggle";
+          const arrow = createSafeElement("span", "\u25B6");
+          arrow.className = "arrow";
+          toggleBtn.appendChild(arrow);
+          toggleBtn.appendChild(document.createTextNode(" \u500B\u5225\u53D6\u5F15\u30C7\u30FC\u30BF\uFF08" + mansionResults.length + "\u4EF6\uFF09"));
+          toggleBtn.addEventListener("click", function() {
+            const isOpen = section.classList.toggle("open");
+            toggleBtn.classList.toggle("open", isOpen);
+          });
+          const detailWrap = createSafeElement("div");
+          detailWrap.className = "table-wrap";
+          detailWrap.style.marginTop = "12px";
+          const detailTable = createSafeElement("table");
+          const detailThead = createSafeElement("thead");
+          const detailHeaderRow = createSafeElement("tr");
+          for (const h of ["\u33A1\u5358\u4FA1", "\u53D6\u5F15\u4FA1\u683C", "\u9762\u7A4D", "\u9593\u53D6\u308A", "\u7BC9\u5E74\u6570", "\u7528\u9014\u5730\u57DF", "\u69CB\u9020", "\u53D6\u5F15\u6642\u70B9"]) {
+            detailHeaderRow.appendChild(createSafeElement("th", h));
+          }
+          detailThead.appendChild(detailHeaderRow);
+          detailTable.appendChild(detailThead);
+          const detailTbody = createSafeElement("tbody");
+          const sorted = [...mansionResults].sort((a, b) => b.sqm_price - a.sqm_price);
+          for (const d of sorted) {
+            const row = createSafeElement("tr");
+            row.appendChild(createSafeElement("td", formatManYen(d.sqm_price) + "\u4E07\u5186/\u33A1"));
+            row.appendChild(createSafeElement("td", formatPrice(d.trade_price)));
+            row.appendChild(createSafeElement("td", d.area_m2 + "\u33A1"));
+            row.appendChild(createSafeElement("td", d.floor_plan || "-"));
+            row.appendChild(createSafeElement("td", d.age != null ? d.age + "\u5E74" : "-"));
+            row.appendChild(createSafeElement("td", d.use_district || "-"));
+            row.appendChild(createSafeElement("td", d.structure || "-"));
+            row.appendChild(createSafeElement("td", d.period || "-"));
+            detailTbody.appendChild(row);
+          }
+          detailTable.appendChild(detailTbody);
+          detailWrap.appendChild(detailTable);
+          section.appendChild(detailWrap);
+          marketDashboardContent.appendChild(toggleBtn);
+          marketDashboardContent.appendChild(section);
+        }
+      }
+      if (count < 20 && citywideStats.count > 0) {
+        const ref = createSafeElement("div");
+        ref.className = "citywide-ref";
+        const refTitle = createSafeElement("div", municipalityName + "\u5168\u4F53\u306E\u53C2\u8003\u30C7\u30FC\u30BF\uFF08\u30DE\u30F3\u30B7\u30E7\u30F3\u53D6\u5F15\uFF09");
+        refTitle.className = "ref-title";
+        ref.appendChild(refTitle);
+        const refWrap = createSafeElement("div");
+        refWrap.className = "table-wrap";
+        const refTable = createSafeElement("table");
+        const refThead = createSafeElement("thead");
+        const refHeaderRow = createSafeElement("tr");
+        for (const h of ["\u4EF6\u6570", "\u33A1\u5358\u4FA1 \u6700\u5C0F", "\u33A1\u5358\u4FA1 \u6700\u5927", "\u33A1\u5358\u4FA1 \u4E2D\u592E\u5024"]) {
+          refHeaderRow.appendChild(createSafeElement("th", h));
+        }
+        refThead.appendChild(refHeaderRow);
+        refTable.appendChild(refThead);
+        const refTbody = createSafeElement("tbody");
+        const refRow = createSafeElement("tr");
+        refRow.appendChild(createSafeElement("td", citywideStats.count + "\u4EF6"));
+        refRow.appendChild(createSafeElement("td", formatManYen(citywideStats.sqm_min) + "\u4E07\u5186/\u33A1"));
+        refRow.appendChild(createSafeElement("td", formatManYen(citywideStats.sqm_max) + "\u4E07\u5186/\u33A1"));
+        refRow.appendChild(createSafeElement("td", formatManYen(citywideStats.sqm_median) + "\u4E07\u5186/\u33A1"));
+        refTbody.appendChild(refRow);
+        refTable.appendChild(refTbody);
+        refWrap.appendChild(refTable);
+        ref.appendChild(refWrap);
+        const refNote = createSafeElement("div", "\u5730\u533A\u306E\u4EF6\u6570\u304C\u5C11\u306A\u3044\u305F\u3081\u3001\u5E02\u533A\u753A\u6751\u5168\u4F53\u306E\u7D71\u8A08\u3092\u53C2\u8003\u3068\u3057\u3066\u8868\u793A\u3057\u3066\u3044\u307E\u3059\u3002");
+        refNote.className = "ref-note";
+        ref.appendChild(refNote);
+        marketDashboardContent.appendChild(ref);
+      }
       if (conf.note) {
         const confNote = createSafeElement("div", conf.note);
         confNote.className = "data-warning";
-        confNote.style.marginTop = "8px";
-        container.appendChild(confNote);
+        confNote.style.marginTop = "12px";
+        marketDashboardContent.appendChild(confNote);
       }
-      if (count === 0) {
-        container.appendChild(createSafeElement("p", "\u8A72\u5F53\u30C7\u30FC\u30BF\u304C\u3042\u308A\u307E\u305B\u3093"));
-        if (citywideData && municipalityName) {
-          renderCitywideRef(container, citywideData.by_use_district, citywideData.overall, isBuilding, municipalityName);
-        }
+    }
+    function renderAgeCurve(ageGroups) {
+      ageCurveContent.textContent = "";
+      if (ageGroups.length === 0) {
+        ageCurveContent.appendChild(createSafeElement("p", "\u30C7\u30FC\u30BF\u304C\u3042\u308A\u307E\u305B\u3093"));
         return;
       }
       const wrap = createSafeElement("div");
@@ -897,41 +881,74 @@
       const table = createSafeElement("table");
       const thead = createSafeElement("thead");
       const headerRow = createSafeElement("tr");
-      const headers = ["\u7528\u9014\u5730\u57DF", "\u4EF6\u6570", isBuilding ? "\u63A8\u5B9A\u576A\u5358\u4FA1(\u4E07\u5186)" : "\u576A\u5358\u4FA1(\u4E07\u5186)", "\u4E00\u7A2E\u5358\u4FA1(\u4E07\u5186)"];
-      for (const h of headers) {
+      for (const h of ["\u7BC9\u5E74\u6570", "\u4EF6\u6570", "\u33A1\u5358\u4FA1 \u6700\u5C0F", "\u33A1\u5358\u4FA1 \u6700\u5927", "\u33A1\u5358\u4FA1 \u4E2D\u592E\u5024"]) {
         headerRow.appendChild(createSafeElement("th", h));
       }
       thead.appendChild(headerRow);
       table.appendChild(thead);
       const tbody = createSafeElement("tbody");
-      for (const district of Object.keys(byUseDistrict)) {
-        const stats = byUseDistrict[district];
+      for (const g of ageGroups) {
         const row = createSafeElement("tr");
-        row.appendChild(createSafeElement("td", district));
-        row.appendChild(createSafeElement("td", stats.count + "\u4EF6"));
-        row.appendChild(createSafeElement(
-          "td",
-          formatManYen(stats.tsubo_min) + "\u301C" + formatManYen(stats.tsubo_max) + "\uFF08\u4E2D\u592E\u5024 " + formatManYen(stats.tsubo_median) + "\uFF09"
-        ));
-        let ikishu = "-";
-        if (stats.ikishu_median != null) {
-          ikishu = formatManYen((_a = stats.ikishu_min) != null ? _a : null) + "\u301C" + formatManYen((_b = stats.ikishu_max) != null ? _b : null) + "\uFF08\u4E2D\u592E\u5024 " + formatManYen(stats.ikishu_median) + "\uFF09";
+        row.appendChild(createSafeElement("td", g.label));
+        if (g.count === 0) {
+          row.appendChild(createSafeElement("td", "0\u4EF6"));
+          row.appendChild(createSafeElement("td", "-"));
+          row.appendChild(createSafeElement("td", "-"));
+          row.appendChild(createSafeElement("td", "-"));
+        } else {
+          row.appendChild(createSafeElement("td", g.count + "\u4EF6"));
+          row.appendChild(createSafeElement("td", formatManYen(g.sqm_min) + "\u4E07\u5186/\u33A1"));
+          row.appendChild(createSafeElement("td", formatManYen(g.sqm_max) + "\u4E07\u5186/\u33A1"));
+          row.appendChild(createSafeElement("td", formatManYen(g.sqm_median) + "\u4E07\u5186/\u33A1"));
         }
-        row.appendChild(createSafeElement("td", ikishu));
         tbody.appendChild(row);
       }
       table.appendChild(tbody);
       wrap.appendChild(table);
-      container.appendChild(wrap);
-      const noteEl = createSafeElement("p", "\u5168\u4F53: " + (isBuilding ? "\u63A8\u5B9A\u576A\u5358\u4FA1" : "\u576A\u5358\u4FA1") + " \u4E2D\u592E\u5024 " + formatManYen(overall.tsubo_median) + "\u4E07\u5186 (" + overall.count + "\u4EF6)");
-      noteEl.className = "data-note";
-      container.appendChild(noteEl);
-      if (details && details.length > 0) {
-        renderDetailTable(container, details, isBuilding);
+      ageCurveContent.appendChild(wrap);
+    }
+    function renderCompareResult(cr) {
+      compareResult.textContent = "";
+      const box = createSafeElement("div");
+      box.className = "compare-result-box verdict-" + cr.verdict;
+      const verdictMessages = {
+        high: { text: "\u76F8\u5834\u3088\u308A\u9AD8\u3081\uFF08+20%\u8D85\uFF09", color: "var(--red)" },
+        slightly_high: { text: "\u3084\u3084\u9AD8\u3081\uFF08+10\u301C20%\uFF09", color: "#E65100" },
+        fair: { text: "\u76F8\u5834\u4E26\u307F\uFF08\xB110%\u4EE5\u5185\uFF09", color: "var(--green-deep)" },
+        slightly_low: { text: "\u3084\u3084\u5B89\u3081\uFF08-10\u301C20%\uFF09", color: "#1565C0" },
+        low: { text: "\u76F8\u5834\u3088\u308A\u5B89\u3081\uFF08-20%\u8D85\uFF09", color: "#1565C0" },
+        unknown: { text: "\u6BD4\u8F03\u30C7\u30FC\u30BF\u4E0D\u8DB3", color: "var(--brown-light)" }
+      };
+      const vm = verdictMessages[cr.verdict] || verdictMessages.unknown;
+      const verdictEl = createSafeElement("div", vm.text);
+      verdictEl.style.fontSize = "18px";
+      verdictEl.style.fontWeight = "700";
+      verdictEl.style.color = vm.color;
+      verdictEl.style.marginBottom = "12px";
+      box.appendChild(verdictEl);
+      const userSqmEl = createSafeElement("div", "\u5165\u529B\u7269\u4EF6\u306E\u33A1\u5358\u4FA1: " + formatManYen(cr.user_sqm_price) + "\u4E07\u5186/\u33A1");
+      userSqmEl.style.fontSize = "14px";
+      userSqmEl.style.marginBottom = "4px";
+      box.appendChild(userSqmEl);
+      if (cr.market_median != null) {
+        const marketEl = createSafeElement("div", "\u5E02\u5834\u4E2D\u592E\u5024\uFF08" + cr.age_group_label + "\uFF09: " + formatManYen(cr.market_median) + "\u4E07\u5186/\u33A1");
+        marketEl.style.fontSize = "14px";
+        marketEl.style.marginBottom = "4px";
+        box.appendChild(marketEl);
       }
-      if (count < 20 && citywideData && municipalityName) {
-        renderCitywideRef(container, citywideData.by_use_district, citywideData.overall, isBuilding, municipalityName);
+      if (cr.diff_ratio != null) {
+        const sign = cr.diff_ratio >= 0 ? "+" : "";
+        const diffEl = createSafeElement("div", "\u4E56\u96E2\u7387: " + sign + (cr.diff_ratio * 100).toFixed(1) + "%");
+        diffEl.style.fontSize = "14px";
+        diffEl.style.marginBottom = "4px";
+        box.appendChild(diffEl);
       }
+      const sampleEl = createSafeElement("div", "\u6BD4\u8F03\u30B5\u30F3\u30D7\u30EB\u6570: " + cr.sample_count + "\u4EF6");
+      sampleEl.style.fontSize = "12px";
+      sampleEl.style.color = "var(--brown-light)";
+      sampleEl.style.marginTop = "8px";
+      box.appendChild(sampleEl);
+      compareResult.appendChild(box);
     }
     async function analyzeCore(apiKey, muniCd, municipality, scopeLabel, districtName) {
       const currentYear = (/* @__PURE__ */ new Date()).getFullYear();
@@ -946,18 +963,16 @@
       } else {
         filtered = rawData;
       }
-      let landOnly = filterByZoning(removeOutliers(calcTsuboStats(filtered)));
-      const landStats = summarizeByUseDistrict(landOnly);
-      const allLandStats = summarizeStats(landOnly);
-      let buildingLand = filterByZoning(removeOutliers(calcBuildingLandStats(filtered)));
-      const buildingStats = summarizeByUseDistrict(buildingLand);
-      const allBuildingStats = summarizeStats(buildingLand);
-      const citywideLand = filterByZoning(removeOutliers(calcTsuboStats(rawData)));
-      const citywideLandStats = summarizeByUseDistrict(citywideLand);
-      const citywideLandOverall = summarizeStats(citywideLand);
-      const citywideBuilding = filterByZoning(removeOutliers(calcBuildingLandStats(rawData)));
-      const citywideBuildingStats = summarizeByUseDistrict(citywideBuilding);
-      const citywideBuildingOverall = summarizeStats(citywideBuilding);
+      let mansionResults = calcMansionStats(filtered);
+      mansionResults = removeSqmOutliers(mansionResults);
+      mansionResults = filterByZoning(mansionResults);
+      const overallStats = summarizeMansionStats(mansionResults);
+      const ageGroups = groupByAge(mansionResults);
+      const byFloorPlan = summarizeByFloorPlan(mansionResults);
+      let citywideResults = calcMansionStats(rawData);
+      citywideResults = removeSqmOutliers(citywideResults);
+      citywideResults = filterByZoning(citywideResults);
+      const citywideStats = summarizeMansionStats(citywideResults);
       return {
         scopeLabel,
         prefecture,
@@ -966,23 +981,12 @@
         muni_cd: muniCd,
         years,
         total_records: rawData.length,
-        filtered_records: filtered.length,
-        land_only: {
-          count: landOnly.length,
-          by_use_district: landStats,
-          overall: allLandStats,
-          details: landOnly
-        },
-        building_land: {
-          count: buildingLand.length,
-          by_use_district: buildingStats,
-          overall: allBuildingStats,
-          details: buildingLand
-        },
-        citywide: {
-          land_only: { count: citywideLand.length, by_use_district: citywideLandStats, overall: citywideLandOverall },
-          building_land: { count: citywideBuilding.length, by_use_district: citywideBuildingStats, overall: citywideBuildingOverall }
-        }
+        mansion_count: mansionResults.length,
+        overall: overallStats,
+        age_groups: ageGroups,
+        by_floor_plan: byFloorPlan,
+        mansion_results: mansionResults,
+        citywide: { overall: citywideStats }
       };
     }
     async function analyzeByAddress(apiKey, address) {
@@ -995,7 +999,7 @@
       setLoadingText("\u5E02\u533A\u753A\u6751\u540D\u3092\u53D6\u5F97\u4E2D...");
       const municipality = await getCityName(apiKey, geo.muniCd);
       if (!municipality) throw new Error("\u5E02\u533A\u753A\u6751\u540D\u306E\u53D6\u5F97\u306B\u5931\u6557\u3057\u307E\u3057\u305F");
-      const scopeLabel = prefecture + municipality + districtName + " \u306E\u76F8\u5834";
+      const scopeLabel = prefecture + municipality + districtName + " \u306E\u4E2D\u53E4\u30DE\u30F3\u30B7\u30E7\u30F3\u76F8\u5834";
       return analyzeCore(apiKey, geo.muniCd, municipality, scopeLabel, districtName);
     }
     async function analyzeByStation(apiKey, station) {
@@ -1003,7 +1007,7 @@
       const municipality = await getCityName(apiKey, station.muni);
       if (!municipality) throw new Error("\u5E02\u533A\u753A\u6751\u540D\u306E\u53D6\u5F97\u306B\u5931\u6557\u3057\u307E\u3057\u305F");
       const prefName = getPrefName(station.muni);
-      const scopeLabel = station.name + "\u99C5\u5468\u8FBA\uFF08" + prefName + municipality + "\u5168\u4F53\uFF09\u306E\u76F8\u5834";
+      const scopeLabel = station.name + "\u99C5\u5468\u8FBA\uFF08" + prefName + municipality + "\u5168\u4F53\uFF09\u306E\u4E2D\u53E4\u30DE\u30F3\u30B7\u30E7\u30F3\u76F8\u5834";
       return analyzeCore(apiKey, station.muni, municipality, scopeLabel, null);
     }
     analyzeBtn.addEventListener("click", async function() {
@@ -1029,6 +1033,7 @@
         }
       }
       analyzeBtn.disabled = true;
+      compareBtn.disabled = true;
       loading.className = "loading active";
       resultsEl.className = "results";
       try {
@@ -1038,12 +1043,20 @@
         } else {
           result = await analyzeByStation(apiKey, selectedStation);
         }
-        renderSummary(result);
-        const lo = result.land_only;
-        const bl = result.building_land;
-        const cw = result.citywide;
-        renderStatsTable(landOnlyContent, lo.by_use_district, lo.overall, false, lo.details, cw.land_only, result.municipality);
-        renderStatsTable(buildingLandContent, bl.by_use_district, bl.overall, true, bl.details, cw.building_land, result.municipality);
+        const overall = result.overall;
+        const ageGroups = result.age_groups;
+        const byFloorPlan = result.by_floor_plan;
+        const mansionResults = result.mansion_results;
+        const citywide = result.citywide;
+        const municipalityName = result.municipality;
+        lastOverallStats = overall;
+        lastAgeGroups = ageGroups;
+        renderMansionSummary(result);
+        renderMarketDashboard(overall, byFloorPlan, mansionResults, citywide.overall, municipalityName);
+        renderAgeCurve(ageGroups);
+        compareHint.style.display = "none";
+        compareForm.style.display = "block";
+        compareBtn.disabled = false;
         loading.className = "loading";
         resultsEl.className = "results active";
         resultsEl.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1062,6 +1075,45 @@
         }
       }
       analyzeBtn.disabled = false;
+    });
+    compareBtn.addEventListener("click", function() {
+      if (!lastOverallStats) return;
+      const areaVal = parseFloat(compareAreaInput.value.trim());
+      const buildYearVal = parseInt(compareBuildYearInput.value.trim(), 10);
+      const floorPlanVal = compareFloorPlanInput.value.trim();
+      const priceVal = parseFloat(comparePriceInput.value.trim());
+      if (isNaN(areaVal) || areaVal <= 0) {
+        compareResult.textContent = "";
+        const errEl = createSafeElement("div", "\u9762\u7A4D\u3092\u6B63\u3057\u304F\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
+        errEl.className = "status error";
+        errEl.style.display = "block";
+        compareResult.appendChild(errEl);
+        return;
+      }
+      if (isNaN(buildYearVal) || buildYearVal < 1900 || buildYearVal > (/* @__PURE__ */ new Date()).getFullYear()) {
+        compareResult.textContent = "";
+        const errEl = createSafeElement("div", "\u5EFA\u7BC9\u5E74\uFF08\u897F\u66A6\uFF09\u3092\u6B63\u3057\u304F\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
+        errEl.className = "status error";
+        errEl.style.display = "block";
+        compareResult.appendChild(errEl);
+        return;
+      }
+      if (isNaN(priceVal) || priceVal <= 0) {
+        compareResult.textContent = "";
+        const errEl = createSafeElement("div", "\u58F2\u51FA\u4FA1\u683C\u3092\u6B63\u3057\u304F\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
+        errEl.className = "status error";
+        errEl.style.display = "block";
+        compareResult.appendChild(errEl);
+        return;
+      }
+      const userInput = {
+        area_m2: areaVal,
+        build_year: buildYearVal,
+        floor_plan: floorPlanVal,
+        asking_price: priceVal
+      };
+      const cr = compareMansionPrice(userInput, lastOverallStats, lastAgeGroups);
+      renderCompareResult(cr);
     });
     addressInput.addEventListener("keydown", function(e) {
       if (e.key === "Enter" && !analyzeBtn.disabled) {

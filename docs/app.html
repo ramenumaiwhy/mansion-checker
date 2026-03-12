@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://msearch.gsi.go.jp https://mreversegeocoder.gsi.go.jp https://reinfolib-proxy.southern-a-22.workers.dev; style-src 'unsafe-inline'; script-src 'self'; font-src https://fonts.gstatic.com; img-src 'self' data:;">
-<title>不動産相場チェッカー Web版</title>
+<title>中古マンション相場診断</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700;900&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet">
@@ -511,6 +511,21 @@
     border-bottom: 1px dotted var(--brown-light);
   }
 
+  /* --- Compare Form --- */
+  .compare-form .input-row { margin-bottom: 12px; }
+  .compare-form input[type="number"], .compare-form input[type="text"] {
+    width: 100%; padding: 10px 14px; border: 1.5px solid var(--cream-dark);
+    border-radius: 10px; font-size: 15px; font-family: inherit;
+    background: var(--cream); color: var(--brown-deep);
+  }
+  .compare-hint { font-size: 14px; color: var(--brown-light); text-align: center; padding: 20px; }
+  .compare-result-box { margin-top: 20px; padding: 20px; border-radius: var(--radius); }
+  .verdict-high { background: var(--red-pale); border: 1px solid rgba(196,75,75,0.2); }
+  .verdict-slightly_high { background: #FFF3E0; border: 1px solid rgba(255,152,0,0.2); }
+  .verdict-fair { background: var(--green-pale); border: 1px solid rgba(43,89,64,0.15); }
+  .verdict-slightly_low, .verdict-low { background: #E3F2FD; border: 1px solid rgba(33,150,243,0.15); }
+  .verdict-unknown { background: var(--cream); border: 1px solid var(--cream-dark); }
+
   /* --- Responsive --- */
   @media (max-width: 480px) {
     .card { padding: 20px; }
@@ -598,8 +613,8 @@
 
   <header>
     <div class="header-badge">Web版</div>
-    <h1><em>不動産相場</em>チェッカー</h1>
-    <p class="lead">住所を入力するだけで、国交省の取引データから坪単価を自動分析</p>
+    <h1><em>中古マンション</em>相場診断</h1>
+    <p class="lead">住所・駅名で検索して、国交省の取引データからマンション㎡単価を自動分析</p>
   </header>
 
   <!-- APIキー設定 -->
@@ -665,7 +680,7 @@
     <div class="filter-section">
       <div class="filter-label">用途地域で絞り込み（任意）</div>
       <div class="filter-hint">選択しなければ全データで分析します</div>
-      <select id="zoningCategory">
+      <select id="zoningCategorySelect">
         <option value="">指定しない</option>
         <option value="住居系">住居系</option>
         <option value="商業系">商業系</option>
@@ -689,34 +704,69 @@
   <div class="results" id="results">
     <div class="result-summary" id="resultSummary"></div>
 
-    <div class="card" id="landOnlyCard">
+    <div class="card" id="marketDashboardCard">
       <div class="card-title">
-        <span class="icon">&#127969;</span>
-        土地のみ取引
+        <span class="icon">&#127970;</span>
+        エリア相場ダッシュボード
       </div>
-      <div id="landOnlyContent"></div>
+      <div id="marketDashboardContent"></div>
     </div>
 
-    <div class="card" id="buildingLandCard">
+    <div class="card" id="ageCurveCard">
       <div class="card-title">
         <span class="icon">&#128200;</span>
-        建物込み取引からの推定（参考値）
+        築年数別 ㎡単価
       </div>
-      <div id="buildingLandContent"></div>
+      <div id="ageCurveContent"></div>
+    </div>
+
+    <div class="card" id="compareCard">
+      <div class="card-title">
+        <span class="icon">&#128269;</span>
+        物件の相場比較
+      </div>
+      <div id="compareContent">
+        <p class="compare-hint" id="compareHint">先に住所・駅名で検索してください</p>
+        <div class="compare-form" id="compareForm" style="display:none">
+          <p style="font-size:13px; color:var(--brown-warm); margin-bottom:16px;">
+            SUUMOなどで見つけた物件の条件を入力して、相場と比較できます。
+          </p>
+          <div class="input-row">
+            <label for="compareAreaInput">面積（㎡）</label>
+            <input type="number" id="compareAreaInput" placeholder="例: 65" step="0.1">
+          </div>
+          <div class="input-row">
+            <label for="compareBuildYearInput">建築年（西暦）</label>
+            <input type="number" id="compareBuildYearInput" placeholder="例: 2005">
+          </div>
+          <div class="input-row">
+            <label for="compareFloorPlanInput">間取り</label>
+            <input type="text" id="compareFloorPlanInput" placeholder="例: 3LDK">
+          </div>
+          <div class="input-row">
+            <label for="comparePriceInput">売出価格（万円）</label>
+            <input type="number" id="comparePriceInput" placeholder="例: 4500">
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-primary" id="compareBtn" disabled>相場と比較する</button>
+          </div>
+          <div id="compareResult"></div>
+        </div>
+      </div>
     </div>
 
     <div class="disclaimer">
       <strong>ご注意・免責事項</strong>
       このサービスは、国土交通省不動産情報ライブラリのAPI機能を使用していますが、
       提供情報の最新性、正確性、完全性等が保証されたものではありません。
-      建物込み取引の推定土地価格は、法定耐用年数に基づく簡易推定であり、
-      リフォーム・個別品質・設備は未考慮です。参考値としてご利用ください。
-      不動産の売買にあたっては、必ず不動産鑑定士や宅地建物取引士等の専門家にご相談ください。
+      マンション名・最寄り駅・駅からの距離はAPIで取得できないため、
+      同一地区の中古マンション取引全体の統計値として参考にしてください。
+      不動産の売買にあたっては、必ず宅地建物取引士等の専門家にご相談ください。
     </div>
   </div>
 
   <footer>
-    不動産相場チェッカー &mdash;
+    中古マンション相場診断 &mdash;
     <a href="https://github.com/ramenumaiwhy/reinfolib-service" target="_blank" rel="noopener">GitHub</a>
   </footer>
 </div>

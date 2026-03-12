@@ -30,57 +30,56 @@ export interface TransactionItem {
   [key: string]: string | undefined;
 }
 
-/** 建物の構造仕様（耐用年数と建築費単価） */
-export interface BuildingSpec {
-  readonly useful_life: number;
-  readonly unit_cost: number;
-}
-
-/** 建物残価推定結果 */
-export interface BuildingResidual {
-  estimated_land_price: number;
-  building_value: number;
-  remaining_ratio: number;
-}
-
-/** 坪単価計算結果（土地のみ取引） */
-export interface TsuboResult {
-  tsubo_price: number;
-  ikishu_price: number | null;
+/** マンション取引データの分析結果 */
+export interface MansionResult {
+  sqm_price: number;        // ㎡単価（円）
   trade_price: number;
   area_m2: number;
-  floor_area_ratio: number;
-  use_district: string;
-  period: string;
-  raw: TransactionItem;
-}
-
-/** 建物込み取引の推定結果 */
-export interface BuildingLandResult {
-  tsubo_price: number;
-  ikishu_price: number | null;
-  estimated_land_price: number;
-  building_value: number;
-  remaining_ratio: number;
-  trade_price: number;
-  area_m2: number;
-  floor_area_ratio: number;
+  floor_plan: string;       // 間取り（1K, 2LDK等）
+  build_year: number | null;
+  age: number | null;        // 築年数
   use_district: string;
   period: string;
   structure: string;
-  building_year: string;
   raw: TransactionItem;
 }
 
-/** 統計サマリー */
-export interface StatsSummary {
+/** 築年数グループの統計 */
+export interface AgeGroup {
+  label: string;             // "〜5年", "6〜10年" 等
+  min_age: number;
+  max_age: number;
   count: number;
-  tsubo_min: number | null;
-  tsubo_max: number | null;
-  tsubo_median: number | null;
-  ikishu_min?: number;
-  ikishu_max?: number;
-  ikishu_median?: number;
+  sqm_min: number | null;
+  sqm_max: number | null;
+  sqm_median: number | null;
+}
+
+/** マンション統計サマリー */
+export interface MansionStats {
+  count: number;
+  sqm_min: number | null;
+  sqm_max: number | null;
+  sqm_median: number | null;
+}
+
+/** ユーザーが入力する物件条件 */
+export interface UserInput {
+  area_m2: number;
+  build_year: number;
+  floor_plan: string;
+  asking_price: number;      // 万円単位
+}
+
+/** 相場比較結果 */
+export interface CompareResult {
+  user_sqm_price: number;
+  market_median: number | null;
+  diff_ratio: number | null;  // (user - market) / market
+  verdict: 'high' | 'slightly_high' | 'fair' | 'slightly_low' | 'low' | 'unknown';
+  age_group_median: number | null;
+  age_group_label: string;
+  sample_count: number;
 }
 
 /** 駅データ（stations.json の1レコード） */

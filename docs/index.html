@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>不動産相場チェッカー - 住所を入れるだけで坪単価がわかる</title>
+<title>中古マンション相場診断 - 営業トークを剥がして、相場の骨格を見る</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700;900&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet">
@@ -29,7 +29,6 @@
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
-
   html { scroll-behavior: smooth; }
 
   body {
@@ -42,7 +41,6 @@
     overflow-x: hidden;
   }
 
-  /* ─── Background Texture ──────────────────── */
   body::before {
     content: '';
     position: fixed;
@@ -54,7 +52,6 @@
     z-index: 0;
   }
 
-  /* ─── Container ───────────────────────────── */
   .container {
     max-width: 780px;
     margin: 0 auto;
@@ -63,7 +60,6 @@
     z-index: 1;
   }
 
-  /* ─── Header ──────────────────────────────── */
   header {
     padding: 48px 0 20px;
     text-align: center;
@@ -128,10 +124,7 @@
   }
   .hero-cta svg { width: 20px; height: 20px; }
 
-  /* ─── Section ─────────────────────────────── */
-  section {
-    margin-bottom: 56px;
-  }
+  section { margin-bottom: 56px; }
 
   .section-label {
     font-size: 11px;
@@ -159,7 +152,6 @@
 
   p { margin-bottom: 14px; }
 
-  /* ─── What You Learn Cards ────────────────── */
   .features {
     display: grid;
     grid-template-columns: 1fr;
@@ -190,14 +182,11 @@
     font-size: 22px;
     margin-bottom: 14px;
   }
-  .feature-icon.tsubo { background: var(--gold-pale); }
-  .feature-icon.ikishu { background: var(--green-pale); }
-  .feature-icon.residual { background: #F5EBE0; }
+  .feature-icon.dashboard { background: var(--gold-pale); }
+  .feature-icon.curve { background: var(--green-pale); }
+  .feature-icon.compare { background: #F5EBE0; }
 
-  .feature-card h3 {
-    font-size: 17px;
-    margin-bottom: 6px;
-  }
+  .feature-card h3 { font-size: 17px; margin-bottom: 6px; }
   .feature-card p {
     font-size: 14px;
     color: var(--brown-warm);
@@ -205,22 +194,37 @@
     line-height: 1.7;
   }
 
-  .feature-card .term {
-    display: inline-block;
-    background: var(--cream);
-    font-size: 12px;
-    padding: 2px 8px;
-    border-radius: 4px;
-    margin-top: 8px;
+  .limitation-box {
+    background: #fff;
+    border: 1.5px solid var(--cream-dark);
+    border-radius: var(--radius);
+    padding: 24px 28px;
+    margin-top: 32px;
+  }
+  .limitation-box h3 { font-size: 16px; margin-bottom: 8px; color: var(--brown-warm); }
+  .limitation-box ul { list-style: none; padding: 0; }
+  .limitation-box li {
+    font-size: 14px;
+    color: var(--brown-warm);
+    padding: 6px 0 6px 24px;
+    position: relative;
+  }
+  .limitation-box li::before {
+    content: '\00d7';
+    position: absolute;
+    left: 0;
     color: var(--brown-light);
-    font-weight: 500;
+    font-weight: 700;
+  }
+  .limitation-box .note {
+    font-size: 13px;
+    color: var(--brown-light);
+    margin-top: 12px;
+    margin-bottom: 0;
+    font-style: italic;
   }
 
-  /* ─── Steps ───────────────────────────────── */
-  .steps {
-    counter-reset: step;
-    margin-top: 24px;
-  }
+  .steps { counter-reset: step; margin-top: 24px; }
 
   .step {
     counter-increment: step;
@@ -254,15 +258,8 @@
     line-height: 1;
   }
 
-  .step h3 {
-    font-size: 16px;
-    margin-bottom: 6px;
-  }
-  .step p {
-    font-size: 14px;
-    color: var(--brown-warm);
-    margin-bottom: 0;
-  }
+  .step h3 { font-size: 16px; margin-bottom: 6px; }
+  .step p { font-size: 14px; color: var(--brown-warm); margin-bottom: 0; }
   .step a {
     color: var(--terracotta);
     text-decoration: none;
@@ -289,7 +286,6 @@
     margin-right: 6px;
   }
 
-  /* connector line between steps */
   .steps .step:not(:last-child)::after {
     content: '';
     position: absolute;
@@ -300,78 +296,6 @@
     background: var(--cream-dark);
   }
 
-  /* ─── How to Use (Colab) ──────────────────── */
-  .colab-box {
-    background: linear-gradient(135deg, #fff 0%, var(--gold-pale) 100%);
-    border: 2px solid rgba(201,168,76,0.2);
-    border-radius: var(--radius-lg);
-    padding: 36px 32px;
-    text-align: center;
-    margin-top: 24px;
-  }
-
-  .colab-box p {
-    font-size: 15px;
-    color: var(--brown-warm);
-    max-width: 480px;
-    margin: 0 auto 20px;
-  }
-
-  .colab-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: #F9AB00;
-    color: #fff;
-    text-decoration: none;
-    font-weight: 700;
-    font-size: 15px;
-    padding: 14px 32px;
-    border-radius: 100px;
-    transition: all 0.3s ease;
-    box-shadow: 0 4px 16px rgba(249,171,0,0.25);
-  }
-  .colab-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 24px rgba(249,171,0,0.35);
-  }
-  .colab-btn img {
-    height: 22px;
-    width: auto;
-  }
-
-  .colab-steps {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 16px;
-    margin-top: 28px;
-    text-align: left;
-  }
-  .colab-step {
-    background: rgba(255,255,255,0.7);
-    border-radius: var(--radius);
-    padding: 18px 20px;
-  }
-  .colab-step .num {
-    display: inline-block;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: var(--terracotta);
-    color: #fff;
-    font-size: 13px;
-    font-weight: 700;
-    text-align: center;
-    line-height: 28px;
-    margin-bottom: 8px;
-  }
-  .colab-step p {
-    font-size: 14px;
-    margin: 0;
-    color: var(--brown-warm);
-  }
-
-  /* ─── Disclaimer ──────────────────────────── */
   .disclaimer {
     background: var(--cream-dark);
     border-radius: var(--radius);
@@ -388,7 +312,6 @@
     font-size: 14px;
   }
 
-  /* ─── Footer ──────────────────────────────── */
   footer {
     text-align: center;
     padding: 32px 0 48px;
@@ -401,7 +324,6 @@
     border-bottom: 1px dotted var(--brown-light);
   }
 
-  /* ─── Divider ─────────────────────────────── */
   .divider {
     width: 48px;
     height: 3px;
@@ -411,7 +333,6 @@
     opacity: 0.5;
   }
 
-  /* ─── Animations ──────────────────────────── */
   @keyframes fadeDown {
     from { opacity: 0; transform: translateY(-12px); }
     to { opacity: 1; transform: translateY(0); }
@@ -422,34 +343,17 @@
     transform: translateY(20px);
     transition: opacity 0.6s ease, transform 0.6s ease;
   }
-  .reveal.visible {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  .reveal.visible { opacity: 1; transform: translateY(0); }
 
-  /* ─── Responsive ──────────────────────────── */
   @media (min-width: 640px) {
-    .features {
-      grid-template-columns: repeat(3, 1fr);
-    }
+    .features { grid-template-columns: repeat(3, 1fr); }
     header { padding: 72px 0 32px; }
   }
 
   @media (max-width: 480px) {
-    .step {
-      padding: 22px 20px 22px 68px;
-    }
-    .step::before {
-      left: 16px;
-      top: 20px;
-      width: 36px;
-      height: 36px;
-      font-size: 16px;
-    }
-    .steps .step:not(:last-child)::after {
-      left: 33px;
-    }
-    .colab-box { padding: 28px 20px; }
+    .step { padding: 22px 20px 22px 68px; }
+    .step::before { left: 16px; top: 20px; width: 36px; height: 36px; font-size: 16px; }
+    .steps .step:not(:last-child)::after { left: 33px; }
   }
 </style>
 </head>
@@ -457,17 +361,16 @@
 
 <div class="container">
 
-  <!-- ─── Header ──────────────────────────── -->
   <header>
-    <div class="header-badge">無料で使える国交省公式データ</div>
-    <h1>住所を入れるだけで<br><em>不動産の相場</em>がわかる</h1>
+    <div class="header-badge">登録不要 / 全国対応 / 国交省公式データ</div>
+    <h1>営業トークを剥がして<br><em>マンション相場</em>の骨格を見る</h1>
     <p class="lead">
-      国土交通省が公開している実際の取引データをもとに、
-      土地の坪単価や建物の残存価値を自動で分析します。
+      国交省が公開している実際の取引データから、中古マンションの
+      &#13217;単価を自動分析。「この価格、高いの？安いの？」に判断材料を返します。
     </p>
     <a href="app.html" class="hero-cta">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/><path d="M10 8l6 4-6 4V8z"/></svg>
-      Web版を使う
+      相場を診断する
     </a>
     <a href="#howto" class="hero-cta" style="background:var(--green-deep);box-shadow:0 4px 16px rgba(43,89,64,0.3);margin-left:12px">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
@@ -477,37 +380,46 @@
 
   <div class="divider"></div>
 
-  <!-- ─── What You Learn ─────────────────── -->
   <section class="reveal">
     <div class="section-label">What You Get</div>
-    <h2>何がわかるの？</h2>
-    <p>3つの指標で、その土地の「相場感」がつかめます。</p>
+    <h2>何がわかるの?</h2>
+    <p>3つの切り口で、中古マンションの「相場感」をつかめます。</p>
 
     <div class="features">
       <div class="feature-card">
-        <div class="feature-icon tsubo">&#127969;</div>
-        <h3>坪単価</h3>
-        <p>土地1坪（約3.3m<sup>2</sup>）あたりの価格。「この辺の土地、坪いくら？」の答えがすぐにわかります。</p>
-        <span class="term">つぼたんか</span>
+        <div class="feature-icon dashboard">&#127970;</div>
+        <h3>エリア相場</h3>
+        <p>住所or駅名を入力するだけで、そのエリアの中古マンション&#13217;単価のレンジと中央値がわかります。間取り別の内訳も。</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon ikishu">&#128202;</div>
-        <h3>一種単価</h3>
-        <p>容積率（何階建てまで建てられるかの割合）を加味した坪単価。条件が違う土地同士を公平に比較できます。</p>
-        <span class="term">いっしゅたんか</span>
+        <div class="feature-icon curve">&#128200;</div>
+        <h3>築年数カーブ</h3>
+        <p>「築10年でどれくらい下がる?」を実データで可視化。築5年刻みで&#13217;単価の推移が見えるので、値落ちのペースがわかります。</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon residual">&#128200;</div>
-        <h3>建物残価推定</h3>
-        <p>建物付きの取引から建物の価値を差し引いて、土地だけの価格を逆算。あくまで参考値です。</p>
-        <span class="term">たてものざんか</span>
+        <div class="feature-icon compare">&#128269;</div>
+        <h3>相場比較</h3>
+        <p>SUUMOなどで見つけた物件の面積・築年数・価格を入力すると、「相場並み」「やや高め」などの判断材料を返します。</p>
       </div>
+    </div>
+
+    <div class="limitation-box">
+      <h3>このサービスでわからないこと</h3>
+      <ul>
+        <li>マンション名の特定（APIで取得できないため）</li>
+        <li>最寄り駅からの距離（同上）</li>
+        <li>管理状態・修繕積立金の妥当性</li>
+        <li>個別物件の「適正価格」の断定</li>
+      </ul>
+      <p class="note">
+        あくまで「エリアの取引実績」から統計値を返すツールです。
+        個別物件の評価には専門家への相談が必要です。
+      </p>
     </div>
   </section>
 
   <div class="divider"></div>
 
-  <!-- ─── API Key Steps ──────────────────── -->
   <section id="howto" class="reveal">
     <div class="section-label">Step by Step</div>
     <h2>まずはAPIキーを取得しよう</h2>
@@ -531,7 +443,7 @@
           <a href="https://www.reinfolib.mlit.go.jp/api/request/" target="_blank" rel="noopener">API利用申請ページ</a>にアクセスし、
           メールアドレスと利用目的を入力して送信します。
         </p>
-        <span class="tip">利用目的は「不動産取引データの分析・研究」のような内容でOKです。</span>
+        <span class="tip">利用目的は「不動産取引データの分析」のような内容でOKです。</span>
       </div>
       <div class="step">
         <h3>メールでAPIキーを受け取る</h3>
@@ -541,64 +453,34 @@
         </p>
         <span class="tip">迷惑メールフォルダに入ることがあるので注意してください。</span>
       </div>
-    </div>
-  </section>
-
-  <div class="divider"></div>
-
-  <!-- ─── How to Use ─────────────────────── -->
-  <section class="reveal">
-    <div class="section-label">Let's Try</div>
-    <h2>分析ツールを使ってみよう</h2>
-    <p>
-      Google Colab（Googleが提供する無料のプログラム実行環境）上で動きます。
-      あなたのGoogleアカウントの中で実行されるため、APIキーが開発者に送信されることはありません。
-      APIキーは安全な入力方式（getpass）で入力するため、ノートブックを保存・共有してもキーは残りません。
-    </p>
-
-    <div class="colab-box">
-      <p>下のボタンからノートブックを開いて、「すべてのセルを実行」するだけ。APIキーは安全な入力欄に自動で案内されます。</p>
-      <a href="https://colab.research.google.com/github/ramenumaiwhy/reinfolib-service/blob/main/reinfolib_checker.ipynb"
-         target="_blank" rel="noopener" class="colab-btn">
-        <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Colab">
-        ノートブックを開く
-      </a>
-
-      <div class="colab-steps">
-        <div class="colab-step">
-          <div class="num">1</div>
-          <p>上のボタンをクリックしてColabを開く</p>
-        </div>
-        <div class="colab-step">
-          <div class="num">2</div>
-          <p>メニューの「ランタイム」→「すべてのセルを実行」をクリック</p>
-        </div>
-        <div class="colab-step">
-          <div class="num">3</div>
-          <p>APIキーの入力欄が出るのでキーを貼り付けてEnter</p>
-        </div>
+      <div class="step">
+        <h3>相場を診断する</h3>
+        <p>
+          <a href="app.html">診断ページ</a>を開き、APIキーを入力したら準備完了。
+          住所か駅名を入れて分析するだけです。
+        </p>
+        <span class="tip">APIキーはブラウザにだけ保存されます。サーバーには送信されません。</span>
       </div>
     </div>
   </section>
 
   <div class="divider"></div>
 
-  <!-- ─── Disclaimer ─────────────────────── -->
   <section class="reveal">
     <div class="disclaimer">
       <strong>ご注意・免責事項</strong>
       このサービスは、国土交通省不動産情報ライブラリのAPI機能を使用していますが、
       提供情報の最新性、正確性、完全性等が保証されたものではありません。<br>
-      建物込み取引の推定土地価格は、法定耐用年数に基づく簡易推定であり、
-      リフォーム・個別品質・設備は未考慮です。参考値としてご利用ください。<br>
-      不動産の売買にあたっては、必ず不動産鑑定士や宅地建物取引士等の専門家にご相談ください。
+      マンション名・最寄り駅・駅からの距離はAPIで取得できないため、
+      同一地区の中古マンション取引全体の統計値として参考にしてください。<br>
+      「割高」「割安」という断定ではなく、判断材料と限界を返すサービスです。<br>
+      不動産の売買にあたっては、必ず宅地建物取引士等の専門家にご相談ください。
     </div>
   </section>
 
-  <!-- ─── Footer ─────────────────────────── -->
   <footer>
     <p>
-      不動産相場チェッカー &mdash;
+      中古マンション相場診断 &mdash;
       <a href="https://github.com/ramenumaiwhy/reinfolib-service" target="_blank" rel="noopener">GitHub</a>
     </p>
   </footer>
@@ -606,7 +488,6 @@
 </div>
 
 <script>
-// Scroll-triggered reveal
 const observer = new IntersectionObserver((entries) => {
   entries.forEach(entry => {
     if (entry.isIntersecting) {

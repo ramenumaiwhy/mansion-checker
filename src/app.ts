@@ -1,18 +1,16 @@
 import type {
   TransactionItem,
-  BuildingSpec,
-  BuildingResidual,
-  TsuboResult,
-  BuildingLandResult,
-  StatsSummary,
+  MansionResult,
+  MansionStats,
+  AgeGroup,
+  UserInput,
+  CompareResult,
   StationData,
 } from './types';
 
 // ═══════════════════════════════════════════════════════════
 // Exported Constants（テストからも参照）
 // ═══════════════════════════════════════════════════════════
-
-export const TSUBO_PER_SQM = 3.30579;
 
 export const PREFECTURE_CODES: Record<string, string> = {
   '01': '北海道', '02': '青森県', '03': '岩手県', '04': '宮城県',
@@ -27,14 +25,6 @@ export const PREFECTURE_CODES: Record<string, string> = {
   '37': '香川県', '38': '愛媛県', '39': '高知県', '40': '福岡県',
   '41': '佐賀県', '42': '長崎県', '43': '熊本県', '44': '大分県',
   '45': '宮崎県', '46': '鹿児島県', '47': '沖縄県',
-};
-
-export const BUILDING_SPECS: Record<string, BuildingSpec> = {
-  SRC: { useful_life: 47, unit_cost: 335000 },
-  RC:  { useful_life: 47, unit_cost: 334000 },
-  LS:  { useful_life: 27, unit_cost: 325000 },
-  S:   { useful_life: 34, unit_cost: 325000 },
-  W:   { useful_life: 22, unit_cost: 215000 },
 };
 
 export const ZONING_CATEGORIES: Record<string, string[]> = {
@@ -129,161 +119,12 @@ export function convertJapaneseYear(yearStr: string): number | null {
   return null;
 }
 
-/** 建物構造 → 仕様（SRC/RC/LS/S/W） */
-export function classifyStructure(structure: string): BuildingSpec {
-  if (structure.includes('\uff33\uff32\uff23')) return BUILDING_SPECS.SRC; // ＳＲＣ
-  if (structure.includes('\uff32\uff23')) return BUILDING_SPECS.RC;         // ＲＣ
-  if (structure.includes('軽量鉄骨')) return BUILDING_SPECS.LS;
-  if (structure.includes('鉄骨')) return BUILDING_SPECS.S;
-  return BUILDING_SPECS.W;
-}
-
-/** 建物残価推定 */
-export function estimateBuildingResidual(item: TransactionItem): BuildingResidual | null {
-  const tradePrice = parseInt(item.TradePrice || '0') || 0;
-  const totalFloorArea = item.TotalFloorArea;
-  const buildingYear = item.BuildingYear;
-  const structure = item.Structure || '';
-
-  if (!tradePrice || !totalFloorArea || !buildingYear) return null;
-  const floorArea = parseFloat(totalFloorArea);
-  if (isNaN(floorArea) || floorArea <= 0) return null;
-
-  const currentYear = new Date().getFullYear();
-  const builtYear = convertJapaneseYear(buildingYear);
-  if (!builtYear) return null;
-  const age = currentYear - builtYear;
-
-  const specs = classifyStructure(structure);
-  const remainingRatio = Math.max(0, 1 - age / specs.useful_life);
-  const buildingValue = specs.unit_cost * floorArea * remainingRatio;
-  const estimatedLandPrice = tradePrice - buildingValue;
-  if (estimatedLandPrice <= 0) return null;
-
-  return {
-    estimated_land_price: Math.floor(estimatedLandPrice),
-    building_value: Math.floor(buildingValue),
-    remaining_ratio: remainingRatio,
-  };
-}
-
-/** 土地のみ取引から坪単価・一種単価を算出 */
-export function calcTsuboStats(items: TransactionItem[]): TsuboResult[] {
-  const results: TsuboResult[] = [];
-  for (const item of items) {
-    if (item.Type !== '宅地(土地のみ)') continue;
-    const tradePrice = parseInt(item.TradePrice || '0') || 0;
-    if (tradePrice <= 100000) continue;
-    const areaM2 = parseFloat(item.Area || '0') || 0;
-    if (areaM2 <= 0) continue;
-
-    const tsuboPrice = tradePrice / areaM2 * TSUBO_PER_SQM;
-    const floorAreaRatio = parseFloat(item.FloorAreaRatio || '0') || 0;
-    const ikishuPrice = floorAreaRatio > 0 ? tsuboPrice / (floorAreaRatio / 100) : null;
-
-    results.push({
-      tsubo_price: tsuboPrice,
-      ikishu_price: ikishuPrice,
-      trade_price: tradePrice,
-      area_m2: areaM2,
-      floor_area_ratio: floorAreaRatio,
-      use_district: getUseDistrict(item),
-      period: item.Period || '',
-      raw: item,
-    });
-  }
-  return results;
-}
-
-/** 建物込み取引から推定土地坪単価を算出 */
-export function calcBuildingLandStats(items: TransactionItem[]): BuildingLandResult[] {
-  const results: BuildingLandResult[] = [];
-  for (const item of items) {
-    if (item.Type !== '宅地(土地と建物)') continue;
-    const areaM2 = parseFloat(item.Area || '0') || 0;
-    if (areaM2 <= 0) continue;
-
-    const estimation = estimateBuildingResidual(item);
-    if (!estimation) continue;
-
-    const tsuboPrice = estimation.estimated_land_price / areaM2 * TSUBO_PER_SQM;
-    const floorAreaRatio = parseFloat(item.FloorAreaRatio || '0') || 0;
-    const ikishuPrice = floorAreaRatio > 0 ? tsuboPrice / (floorAreaRatio / 100) : null;
-
-    results.push({
-      tsubo_price: tsuboPrice,
-      ikishu_price: ikishuPrice,
-      estimated_land_price: estimation.estimated_land_price,
-      building_value: estimation.building_value,
-      remaining_ratio: estimation.remaining_ratio,
-      trade_price: parseInt(item.TradePrice || '0') || 0,
-      area_m2: areaM2,
-      floor_area_ratio: floorAreaRatio,
-      use_district: getUseDistrict(item),
-      period: item.Period || '',
-      structure: item.Structure || '',
-      building_year: item.BuildingYear || '',
-      raw: item,
-    });
-  }
-  return results;
-}
-
-/** 異常値除外（中央値の1/5未満を除外） */
-export function removeOutliers<T extends { tsubo_price: number }>(results: T[]): T[] {
-  const prices = results.map(r => r.tsubo_price);
-  if (prices.length < 3) return results;
-  const sorted = [...prices].sort((a, b) => a - b);
-  const mid = sorted[Math.floor(sorted.length / 2)];
-  return results.filter(r => r.tsubo_price >= mid / 5);
-}
-
 /** 中央値 */
 export function median(arr: number[]): number | null {
   if (arr.length === 0) return null;
   const sorted = [...arr].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
-/** 統計サマリー（min/max/median） */
-export function summarizeStats(
-  results: Array<{ tsubo_price: number; ikishu_price: number | null }>,
-): StatsSummary {
-  const tsuboPrices = results.map(r => r.tsubo_price);
-  const ikishuPrices = results
-    .filter(r => r.ikishu_price != null)
-    .map(r => r.ikishu_price as number);
-
-  const summary: StatsSummary = {
-    count: tsuboPrices.length,
-    tsubo_min: tsuboPrices.length ? Math.min(...tsuboPrices) : null,
-    tsubo_max: tsuboPrices.length ? Math.max(...tsuboPrices) : null,
-    tsubo_median: median(tsuboPrices),
-  };
-  if (ikishuPrices.length) {
-    summary.ikishu_min = Math.min(...ikishuPrices);
-    summary.ikishu_max = Math.max(...ikishuPrices);
-    summary.ikishu_median = median(ikishuPrices) ?? undefined;
-  }
-  return summary;
-}
-
-/** 用途地域別に集計 */
-export function summarizeByUseDistrict(
-  results: Array<{ tsubo_price: number; ikishu_price: number | null; use_district: string }>,
-): Record<string, StatsSummary> {
-  const groups: Record<string, Array<{ tsubo_price: number; ikishu_price: number | null }>> = {};
-  for (const r of results) {
-    const key = r.use_district || '不明';
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(r);
-  }
-  const summaries: Record<string, StatsSummary> = {};
-  for (const district of Object.keys(groups)) {
-    summaries[district] = summarizeStats(groups[district]);
-  }
-  return summaries;
 }
 
 /** 万円表示（小数1桁） */
@@ -299,6 +140,148 @@ export function formatPrice(value: number | string | null | undefined): string {
   if (isNaN(num) || num <= 0) return '-';
   if (num >= 100000000) return (num / 100000000).toFixed(1) + '億';
   return Math.round(num / 10000).toLocaleString() + '万';
+}
+
+/** 異常値除外（中央値の1/5未満を除外） */
+export function removeSqmOutliers(results: MansionResult[]): MansionResult[] {
+  const prices = results.map(r => r.sqm_price);
+  if (prices.length < 3) return results;
+  const sorted = [...prices].sort((a, b) => a - b);
+  const mid = sorted[Math.floor(sorted.length / 2)];
+  return results.filter(r => r.sqm_price >= mid / 5);
+}
+
+/** 中古マンション取引を抽出して㎡単価を算出 */
+export function calcMansionStats(items: TransactionItem[]): MansionResult[] {
+  const currentYear = new Date().getFullYear();
+  const results: MansionResult[] = [];
+  for (const item of items) {
+    if (item.Type !== '中古マンション等') continue;
+    const tradePrice = parseInt(item.TradePrice || '0') || 0;
+    if (tradePrice <= 0) continue;
+    const areaM2 = parseFloat(item.Area || '0') || 0;
+    if (areaM2 <= 0) continue;
+
+    const sqmPrice = tradePrice / areaM2;
+    const buildYear = convertJapaneseYear(item.BuildingYear || '');
+    const age = buildYear != null ? currentYear - buildYear : null;
+
+    results.push({
+      sqm_price: sqmPrice,
+      trade_price: tradePrice,
+      area_m2: areaM2,
+      floor_plan: item.FloorPlan || '',
+      build_year: buildYear,
+      age: age,
+      use_district: getUseDistrict(item),
+      period: item.Period || '',
+      structure: item.Structure || '',
+      raw: item,
+    });
+  }
+  return results;
+}
+
+/** マンション統計サマリー */
+export function summarizeMansionStats(results: MansionResult[]): MansionStats {
+  const prices = results.map(r => r.sqm_price);
+  return {
+    count: prices.length,
+    sqm_min: prices.length ? Math.min(...prices) : null,
+    sqm_max: prices.length ? Math.max(...prices) : null,
+    sqm_median: median(prices),
+  };
+}
+
+/** 築年数でグループ化 */
+export const AGE_BUCKETS: { label: string; min: number; max: number }[] = [
+  { label: '〜5年', min: 0, max: 5 },
+  { label: '6〜10年', min: 6, max: 10 },
+  { label: '11〜15年', min: 11, max: 15 },
+  { label: '16〜20年', min: 16, max: 20 },
+  { label: '21〜25年', min: 21, max: 25 },
+  { label: '26〜30年', min: 26, max: 30 },
+  { label: '31年以上', min: 31, max: 999 },
+];
+
+export function groupByAge(results: MansionResult[]): AgeGroup[] {
+  return AGE_BUCKETS.map(bucket => {
+    const group = results.filter(r => r.age != null && r.age >= bucket.min && r.age <= bucket.max);
+    const prices = group.map(r => r.sqm_price);
+    return {
+      label: bucket.label,
+      min_age: bucket.min,
+      max_age: bucket.max,
+      count: group.length,
+      sqm_min: prices.length ? Math.min(...prices) : null,
+      sqm_max: prices.length ? Math.max(...prices) : null,
+      sqm_median: median(prices),
+    };
+  });
+}
+
+/** 間取り別に統計 */
+export function summarizeByFloorPlan(results: MansionResult[]): Record<string, MansionStats> {
+  const groups: Record<string, MansionResult[]> = {};
+  for (const r of results) {
+    const key = r.floor_plan || '不明';
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(r);
+  }
+  const summaries: Record<string, MansionStats> = {};
+  for (const plan of Object.keys(groups)) {
+    summaries[plan] = summarizeMansionStats(groups[plan]);
+  }
+  return summaries;
+}
+
+/** ユーザー入力と相場を比較 */
+export function compareMansionPrice(
+  userInput: UserInput,
+  overallStats: MansionStats,
+  ageGroups: AgeGroup[],
+): CompareResult {
+  const userSqmPrice = (userInput.asking_price * 10000) / userInput.area_m2;
+  const currentYear = new Date().getFullYear();
+  const userAge = currentYear - userInput.build_year;
+
+  // 該当する築年数グループを探す
+  const ageGroup = ageGroups.find(g => userAge >= g.min_age && userAge <= g.max_age);
+  const ageGroupMedian = ageGroup?.sqm_median ?? null;
+  const ageGroupLabel = ageGroup?.label ?? '不明';
+
+  // 比較対象: 築年数グループの中央値があればそれ、なければ全体中央値
+  const compareMedian = ageGroupMedian ?? overallStats.sqm_median;
+
+  if (compareMedian == null || compareMedian <= 0) {
+    return {
+      user_sqm_price: userSqmPrice,
+      market_median: null,
+      diff_ratio: null,
+      verdict: 'unknown',
+      age_group_median: ageGroupMedian,
+      age_group_label: ageGroupLabel,
+      sample_count: ageGroup?.count ?? 0,
+    };
+  }
+
+  const diffRatio = (userSqmPrice - compareMedian) / compareMedian;
+  let verdict: CompareResult['verdict'];
+  if (diffRatio > 0.2) verdict = 'high';
+  else if (diffRatio > 0.1) verdict = 'slightly_high';
+  else if (diffRatio >= -0.1) verdict = 'fair';
+  else if (diffRatio >= -0.2) verdict = 'slightly_low';
+  else verdict = 'low';
+
+  return {
+    user_sqm_price: userSqmPrice,
+    market_median: compareMedian,
+    diff_ratio: diffRatio,
+    verdict,
+    age_group_median: ageGroupMedian,
+    age_group_label: ageGroupLabel,
+    sample_count: ageGroup?.count ?? 0,
+  };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -367,11 +350,19 @@ function init(): void {
   const loadingText = document.getElementById('loadingText') as HTMLElement;
   const resultsEl = document.getElementById('results') as HTMLElement;
   const resultSummary = document.getElementById('resultSummary') as HTMLElement;
-  const landOnlyContent = document.getElementById('landOnlyContent') as HTMLElement;
-  const buildingLandContent = document.getElementById('buildingLandContent') as HTMLElement;
+  const marketDashboardContent = document.getElementById('marketDashboardContent') as HTMLElement;
+  const ageCurveContent = document.getElementById('ageCurveContent') as HTMLElement;
+  const compareHint = document.getElementById('compareHint') as HTMLElement;
+  const compareForm = document.getElementById('compareForm') as HTMLElement;
+  const compareAreaInput = document.getElementById('compareAreaInput') as HTMLInputElement;
+  const compareBuildYearInput = document.getElementById('compareBuildYearInput') as HTMLInputElement;
+  const compareFloorPlanInput = document.getElementById('compareFloorPlanInput') as HTMLInputElement;
+  const comparePriceInput = document.getElementById('comparePriceInput') as HTMLInputElement;
+  const compareBtn = document.getElementById('compareBtn') as HTMLButtonElement;
+  const compareResult = document.getElementById('compareResult') as HTMLElement;
   const zoningCategorySelect = document.getElementById('zoningCategorySelect') as HTMLSelectElement;
   const zoningDetailDiv = document.getElementById('zoningDetail') as HTMLElement;
-  const searchModeTabs = document.querySelectorAll('.search-tab');
+  const searchModeTabs = document.querySelectorAll('.search-mode-tab');
   const addressSearchArea = document.getElementById('addressSearchArea') as HTMLElement;
   const stationSearchArea = document.getElementById('stationSearchArea') as HTMLElement;
 
@@ -383,6 +374,8 @@ function init(): void {
   let highlightedIndex = -1;
   let isComposing = false;
   let selectedZoningTypes: string[] = [];
+  let lastOverallStats: MansionStats | null = null;
+  let lastAgeGroups: AgeGroup[] = [];
 
   // ─── ユーティリティ ─────────────────────────────
   function sleep(ms: number): Promise<void> {
@@ -414,9 +407,9 @@ function init(): void {
     (function (tab: Element) {
       tab.addEventListener('click', function () {
         for (let j = 0; j < searchModeTabs.length; j++) {
-          (searchModeTabs[j] as HTMLElement).className = 'search-tab';
+          (searchModeTabs[j] as HTMLElement).className = 'search-mode-tab';
         }
-        (tab as HTMLElement).className = 'search-tab active';
+        (tab as HTMLElement).className = 'search-mode-tab active';
         searchMode = (tab as HTMLElement).dataset.mode || 'address';
         if (searchMode === 'address') {
           addressSearchArea.style.display = '';
@@ -756,7 +749,7 @@ function init(): void {
     return allData;
   }
 
-  // ─── レンダリング ──────────────────────────────
+  // ─── 信頼度判定 ──────────────────────────────────
   function getConfidence(count: number): { label: string; cls: string; note: string } {
     if (count >= 30) return { label: '信頼度: 高', cls: 'confidence-high', note: '' };
     if (count >= 20) return { label: '信頼度: 中', cls: 'confidence-mid', note: '中央値は概ね安定。±15%程度のブレ幅を見てください。' };
@@ -764,144 +757,45 @@ function init(): void {
     return { label: '信頼度: 不足', cls: 'confidence-poor', note: '件数が極めて少なく統計的に信頼できません。市区町村全体のデータをご参照ください。' };
   }
 
-  function renderDetailTable(container: HTMLElement, details: Array<TsuboResult | BuildingLandResult>, isBuilding: boolean): void {
-    const section = createSafeElement('div');
-    section.className = 'detail-section';
-
-    const toggleBtn = createSafeElement('button', '');
-    toggleBtn.className = 'detail-toggle';
-    const arrow = createSafeElement('span', '\u25B6');
-    arrow.className = 'arrow';
-    toggleBtn.appendChild(arrow);
-    toggleBtn.appendChild(document.createTextNode(' 個別取引データ（' + details.length + '件）'));
-
-    toggleBtn.addEventListener('click', function () {
-      const isOpen = section.classList.toggle('open');
-      toggleBtn.classList.toggle('open', isOpen);
-    });
-
-    const calcHeaders: [string, string][] = isBuilding
-      ? [['推定坪単価(万円)', 'tsubo_price'], ['一種単価(万円)', 'ikishu_price'], ['推定土地価格', 'estimated_land_price'], ['推定建物残価', 'building_value']]
-      : [['坪単価(万円)', 'tsubo_price'], ['一種単価(万円)', 'ikishu_price']];
-
-    const rawColumns: [string, string][] = [];
-    const knownKeys: Record<string, boolean> = {};
-    for (const [key, label] of RAW_FIELD_LABELS) {
-      knownKeys[key] = true;
-      rawColumns.push([key, label]);
-    }
-    if (details.length > 0 && details[0].raw) {
-      for (const key of Object.keys(details[0].raw)) {
-        if (!knownKeys[key] && RAW_FIELD_SKIP.indexOf(key) === -1) {
-          rawColumns.push([key, key]);
-        }
-      }
-    }
-
-    const wrap = createSafeElement('div');
-    wrap.className = 'table-wrap';
-    wrap.style.marginTop = '12px';
-    const table = createSafeElement('table');
-    const thead = createSafeElement('thead');
-    const headerRow = createSafeElement('tr');
-
-    for (const [label] of calcHeaders) {
-      const th = createSafeElement('th', label);
-      th.style.background = 'var(--gold-pale)';
-      th.style.color = 'var(--terracotta)';
-      headerRow.appendChild(th);
-    }
-    for (const [, label] of rawColumns) {
-      headerRow.appendChild(createSafeElement('th', label));
-    }
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-
-    const tbody = createSafeElement('tbody');
-    const sorted = [...details].sort((a, b) => b.tsubo_price - a.tsubo_price);
-
-    for (const d of sorted) {
-      const raw = d.raw || {};
-      const row = createSafeElement('tr');
-
-      const dRecord = d as unknown as Record<string, unknown>;
-      for (const [, field] of calcHeaders) {
-        let val: string;
-        if (field === 'tsubo_price' || field === 'ikishu_price') {
-          const v = dRecord[field] as number | null;
-          val = v != null ? formatManYen(v) : '-';
-        } else if (field === 'estimated_land_price' || field === 'building_value') {
-          val = formatPrice(dRecord[field] as number);
-        } else {
-          const v = dRecord[field];
-          val = v != null ? String(v) : '-';
-        }
-        const td = createSafeElement('td', val);
-        td.style.background = 'var(--gold-pale)';
-        row.appendChild(td);
-      }
-
-      for (const [rawKey] of rawColumns) {
-        const rawVal = raw[rawKey];
-        let cellText: string;
-        if (rawKey === 'TradePrice') {
-          cellText = formatPrice(rawVal);
-        } else if (rawVal == null || rawVal === '') {
-          cellText = '-';
-        } else {
-          cellText = String(rawVal);
-        }
-        row.appendChild(createSafeElement('td', cellText));
-      }
-
-      tbody.appendChild(row);
-    }
-    table.appendChild(tbody);
-    wrap.appendChild(table);
-    section.appendChild(wrap);
-
-    container.appendChild(toggleBtn);
-    container.appendChild(section);
-  }
-
-  function renderSummary(result: Record<string, unknown>): void {
+  // ─── レンダリング: サマリー ──────────────────────
+  function renderMansionSummary(result: Record<string, unknown>): void {
     resultSummary.textContent = '';
-    const r = result as {
-      scopeLabel?: string;
-      prefecture: string;
-      municipality: string;
-      district_name: string;
-      years: number[];
-      filtered_records: number;
-      land_only: { overall: StatsSummary };
-      building_land: { overall: StatsSummary };
-    };
 
-    const h3 = createSafeElement('h3', r.scopeLabel || (r.prefecture + r.municipality + r.district_name + ' の相場'));
+    const scopeLabel = result.scopeLabel as string;
+    const years = result.years as number[];
+    const totalRecords = result.total_records as number;
+    const mansionCount = result.mansion_count as number;
+    const overall = result.overall as MansionStats;
+
+    const h3 = createSafeElement('h3', scopeLabel || '中古マンション相場');
     resultSummary.appendChild(h3);
 
     const grid = createSafeElement('div');
     grid.className = 'summary-grid';
 
+    const conf = getConfidence(mansionCount);
+    const badge = createSafeElement('span', conf.label);
+    badge.className = 'confidence-badge ' + conf.cls;
+    badge.style.marginLeft = '0';
+    badge.style.marginBottom = '8px';
+    badge.style.display = 'inline-flex';
+    resultSummary.insertBefore(badge, h3.nextSibling);
+
     const items: { label: string; value: string; unit: string }[] = [
-      { label: '分析対象年', value: r.years.join(', '), unit: '' },
-      { label: '対象地区の取引件数', value: String(r.filtered_records), unit: '件' },
+      { label: '分析対象年', value: years.join(', '), unit: '' },
+      { label: '取引件数（全体）', value: String(totalRecords), unit: '件' },
+      { label: 'マンション取引件数', value: String(mansionCount), unit: '件' },
     ];
 
-    const zoneCat = zoningCategorySelect.value;
-    if (zoneCat) {
-      const zoneLabel = selectedZoningTypes.length > 0 ? selectedZoningTypes.join(', ') : zoneCat;
-      items.push({ label: '用途地域フィルタ', value: zoneLabel, unit: '' });
+    if (overall.sqm_median != null) {
+      items.push({ label: '㎡単価 中央値', value: formatManYen(overall.sqm_median), unit: '万円/㎡' });
     }
-
-    const landMedian = r.land_only.overall.tsubo_median;
-    if (landMedian != null) {
-      items.push({ label: '坪単価（中央値）', value: formatManYen(landMedian), unit: '万円' });
-    }
-
-    const bldMedian = r.building_land.overall.tsubo_median;
-    if (bldMedian != null) {
-      items.push({ label: '推定坪単価（中央値）', value: formatManYen(bldMedian), unit: '万円' });
+    if (overall.sqm_min != null && overall.sqm_max != null) {
+      items.push({
+        label: '㎡単価 レンジ',
+        value: formatManYen(overall.sqm_min) + '〜' + formatManYen(overall.sqm_max),
+        unit: '万円/㎡',
+      });
     }
 
     for (const it of items) {
@@ -924,142 +818,277 @@ function init(): void {
     resultSummary.appendChild(grid);
   }
 
-  function renderCitywideRef(
-    container: HTMLElement,
-    citywideByDistrict: Record<string, StatsSummary>,
-    citywideOverall: StatsSummary,
-    isBuilding: boolean,
+  // ─── レンダリング: エリア相場ダッシュボード ─────
+  function renderMarketDashboard(
+    stats: MansionStats,
+    byFloorPlan: Record<string, MansionStats>,
+    mansionResults: MansionResult[],
+    citywideStats: MansionStats,
     municipalityName: string,
   ): void {
-    const ref = createSafeElement('div');
-    ref.className = 'citywide-ref';
+    marketDashboardContent.textContent = '';
 
-    const title = createSafeElement('div', municipalityName + '全体の同一用途地域データ（参考）');
-    title.className = 'ref-title';
-    ref.appendChild(title);
-
-    if (citywideOverall.count === 0) {
-      ref.appendChild(createSafeElement('p', '該当データがありません'));
-      container.appendChild(ref);
-      return;
-    }
-
-    const wrap = createSafeElement('div');
-    wrap.className = 'table-wrap';
-    const table = createSafeElement('table');
-    const thead = createSafeElement('thead');
-    const headerRow = createSafeElement('tr');
-    const headers = ['用途地域', '件数', isBuilding ? '推定坪単価(万円)' : '坪単価(万円)'];
-    for (const h of headers) {
-      headerRow.appendChild(createSafeElement('th', h));
-    }
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-
-    const tbody = createSafeElement('tbody');
-    for (const district of Object.keys(citywideByDistrict)) {
-      const stats = citywideByDistrict[district];
-      const row = createSafeElement('tr');
-      row.appendChild(createSafeElement('td', district));
-      row.appendChild(createSafeElement('td', stats.count + '件'));
-      row.appendChild(createSafeElement('td',
-        formatManYen(stats.tsubo_min) + '〜' + formatManYen(stats.tsubo_max) +
-        '（中央値 ' + formatManYen(stats.tsubo_median) + '）',
-      ));
-      tbody.appendChild(row);
-    }
-    table.appendChild(tbody);
-    wrap.appendChild(table);
-    ref.appendChild(wrap);
-
-    const note = createSafeElement('div',
-      '不動産鑑定評価基準の「同一需給圏内の類似地域」に相当する参考値です。' +
-      '地域要因（駅距離・周辺環境等）の補正は行っていないため、あくまで目安としてご利用ください。');
-    note.className = 'ref-note';
-    ref.appendChild(note);
-
-    container.appendChild(ref);
-  }
-
-  function renderStatsTable(
-    container: HTMLElement,
-    byUseDistrict: Record<string, StatsSummary>,
-    overall: StatsSummary,
-    isBuilding: boolean,
-    details: Array<TsuboResult | BuildingLandResult>,
-    citywideData: { by_use_district: Record<string, StatsSummary>; overall: StatsSummary } | null,
-    municipalityName: string,
-  ): void {
-    container.textContent = '';
-
-    const count = overall.count;
+    const count = stats.count;
     const conf = getConfidence(count);
-    const badge = createSafeElement('span', conf.label);
-    badge.className = 'confidence-badge ' + conf.cls;
-    container.appendChild(badge);
+
+    if (count === 0) {
+      const noData = createSafeElement('p', '対象エリアのマンション取引データがありません');
+      noData.className = 'data-note';
+      marketDashboardContent.appendChild(noData);
+    } else {
+      // 全体サマリーテーブル
+      const overallWrap = createSafeElement('div');
+      overallWrap.className = 'table-wrap';
+      const overallTable = createSafeElement('table');
+      const overallThead = createSafeElement('thead');
+      const overallHeaderRow = createSafeElement('tr');
+      for (const h of ['件数', '㎡単価 最小', '㎡単価 最大', '㎡単価 中央値']) {
+        overallHeaderRow.appendChild(createSafeElement('th', h));
+      }
+      overallThead.appendChild(overallHeaderRow);
+      overallTable.appendChild(overallThead);
+
+      const overallTbody = createSafeElement('tbody');
+      const overallRow = createSafeElement('tr');
+      overallRow.appendChild(createSafeElement('td', count + '件'));
+      overallRow.appendChild(createSafeElement('td', formatManYen(stats.sqm_min) + '万円/㎡'));
+      overallRow.appendChild(createSafeElement('td', formatManYen(stats.sqm_max) + '万円/㎡'));
+      overallRow.appendChild(createSafeElement('td', formatManYen(stats.sqm_median) + '万円/㎡'));
+      overallTbody.appendChild(overallRow);
+      overallTable.appendChild(overallTbody);
+      overallWrap.appendChild(overallTable);
+      marketDashboardContent.appendChild(overallWrap);
+
+      // 間取り別テーブル
+      const fpKeys = Object.keys(byFloorPlan);
+      if (fpKeys.length > 0) {
+        const fpTitle = createSafeElement('p', '間取り別㎡単価');
+        fpTitle.className = 'data-note';
+        fpTitle.style.marginTop = '16px';
+        fpTitle.style.marginBottom = '8px';
+        fpTitle.style.fontWeight = '700';
+        fpTitle.style.color = 'var(--brown-warm)';
+        marketDashboardContent.appendChild(fpTitle);
+
+        const fpWrap = createSafeElement('div');
+        fpWrap.className = 'table-wrap';
+        const fpTable = createSafeElement('table');
+        const fpThead = createSafeElement('thead');
+        const fpHeaderRow = createSafeElement('tr');
+        for (const h of ['間取り', '件数', '㎡単価 最小', '㎡単価 最大', '㎡単価 中央値']) {
+          fpHeaderRow.appendChild(createSafeElement('th', h));
+        }
+        fpThead.appendChild(fpHeaderRow);
+        fpTable.appendChild(fpThead);
+
+        const fpTbody = createSafeElement('tbody');
+        for (const fp of fpKeys) {
+          const s = byFloorPlan[fp];
+          const row = createSafeElement('tr');
+          row.appendChild(createSafeElement('td', fp || '不明'));
+          row.appendChild(createSafeElement('td', s.count + '件'));
+          row.appendChild(createSafeElement('td', formatManYen(s.sqm_min) + '万円/㎡'));
+          row.appendChild(createSafeElement('td', formatManYen(s.sqm_max) + '万円/㎡'));
+          row.appendChild(createSafeElement('td', formatManYen(s.sqm_median) + '万円/㎡'));
+          fpTbody.appendChild(row);
+        }
+        fpTable.appendChild(fpTbody);
+        fpWrap.appendChild(fpTable);
+        marketDashboardContent.appendChild(fpWrap);
+      }
+
+      // 個別取引データ（トグル）
+      if (mansionResults.length > 0) {
+        const section = createSafeElement('div');
+        section.className = 'detail-section';
+
+        const toggleBtn = createSafeElement('button', '');
+        toggleBtn.className = 'detail-toggle';
+        const arrow = createSafeElement('span', '\u25B6');
+        arrow.className = 'arrow';
+        toggleBtn.appendChild(arrow);
+        toggleBtn.appendChild(document.createTextNode(' 個別取引データ（' + mansionResults.length + '件）'));
+
+        toggleBtn.addEventListener('click', function () {
+          const isOpen = section.classList.toggle('open');
+          toggleBtn.classList.toggle('open', isOpen);
+        });
+
+        const detailWrap = createSafeElement('div');
+        detailWrap.className = 'table-wrap';
+        detailWrap.style.marginTop = '12px';
+        const detailTable = createSafeElement('table');
+        const detailThead = createSafeElement('thead');
+        const detailHeaderRow = createSafeElement('tr');
+        for (const h of ['㎡単価', '取引価格', '面積', '間取り', '築年数', '用途地域', '構造', '取引時点']) {
+          detailHeaderRow.appendChild(createSafeElement('th', h));
+        }
+        detailThead.appendChild(detailHeaderRow);
+        detailTable.appendChild(detailThead);
+
+        const detailTbody = createSafeElement('tbody');
+        const sorted = [...mansionResults].sort((a, b) => b.sqm_price - a.sqm_price);
+        for (const d of sorted) {
+          const row = createSafeElement('tr');
+          row.appendChild(createSafeElement('td', formatManYen(d.sqm_price) + '万円/㎡'));
+          row.appendChild(createSafeElement('td', formatPrice(d.trade_price)));
+          row.appendChild(createSafeElement('td', d.area_m2 + '㎡'));
+          row.appendChild(createSafeElement('td', d.floor_plan || '-'));
+          row.appendChild(createSafeElement('td', d.age != null ? d.age + '年' : '-'));
+          row.appendChild(createSafeElement('td', d.use_district || '-'));
+          row.appendChild(createSafeElement('td', d.structure || '-'));
+          row.appendChild(createSafeElement('td', d.period || '-'));
+          detailTbody.appendChild(row);
+        }
+        detailTable.appendChild(detailTbody);
+        detailWrap.appendChild(detailTable);
+        section.appendChild(detailWrap);
+
+        marketDashboardContent.appendChild(toggleBtn);
+        marketDashboardContent.appendChild(section);
+      }
+    }
+
+    // 信頼度が低い場合: 市区町村全体の参考データ
+    if (count < 20 && citywideStats.count > 0) {
+      const ref = createSafeElement('div');
+      ref.className = 'citywide-ref';
+
+      const refTitle = createSafeElement('div', municipalityName + '全体の参考データ（マンション取引）');
+      refTitle.className = 'ref-title';
+      ref.appendChild(refTitle);
+
+      const refWrap = createSafeElement('div');
+      refWrap.className = 'table-wrap';
+      const refTable = createSafeElement('table');
+      const refThead = createSafeElement('thead');
+      const refHeaderRow = createSafeElement('tr');
+      for (const h of ['件数', '㎡単価 最小', '㎡単価 最大', '㎡単価 中央値']) {
+        refHeaderRow.appendChild(createSafeElement('th', h));
+      }
+      refThead.appendChild(refHeaderRow);
+      refTable.appendChild(refThead);
+
+      const refTbody = createSafeElement('tbody');
+      const refRow = createSafeElement('tr');
+      refRow.appendChild(createSafeElement('td', citywideStats.count + '件'));
+      refRow.appendChild(createSafeElement('td', formatManYen(citywideStats.sqm_min) + '万円/㎡'));
+      refRow.appendChild(createSafeElement('td', formatManYen(citywideStats.sqm_max) + '万円/㎡'));
+      refRow.appendChild(createSafeElement('td', formatManYen(citywideStats.sqm_median) + '万円/㎡'));
+      refTbody.appendChild(refRow);
+      refTable.appendChild(refTbody);
+      refWrap.appendChild(refTable);
+      ref.appendChild(refWrap);
+
+      const refNote = createSafeElement('div', '地区の件数が少ないため、市区町村全体の統計を参考として表示しています。');
+      refNote.className = 'ref-note';
+      ref.appendChild(refNote);
+
+      marketDashboardContent.appendChild(ref);
+    }
+
     if (conf.note) {
       const confNote = createSafeElement('div', conf.note);
       confNote.className = 'data-warning';
-      confNote.style.marginTop = '8px';
-      container.appendChild(confNote);
+      confNote.style.marginTop = '12px';
+      marketDashboardContent.appendChild(confNote);
     }
+  }
 
-    if (count === 0) {
-      container.appendChild(createSafeElement('p', '該当データがありません'));
-      if (citywideData && municipalityName) {
-        renderCitywideRef(container, citywideData.by_use_district, citywideData.overall, isBuilding, municipalityName);
-      }
+  // ─── レンダリング: 築年数別減価カーブ ───────────
+  function renderAgeCurve(ageGroups: AgeGroup[]): void {
+    ageCurveContent.textContent = '';
+
+    if (ageGroups.length === 0) {
+      ageCurveContent.appendChild(createSafeElement('p', 'データがありません'));
       return;
     }
 
     const wrap = createSafeElement('div');
     wrap.className = 'table-wrap';
     const table = createSafeElement('table');
-
     const thead = createSafeElement('thead');
     const headerRow = createSafeElement('tr');
-    const headers = ['用途地域', '件数', isBuilding ? '推定坪単価(万円)' : '坪単価(万円)', '一種単価(万円)'];
-    for (const h of headers) {
+    for (const h of ['築年数', '件数', '㎡単価 最小', '㎡単価 最大', '㎡単価 中央値']) {
       headerRow.appendChild(createSafeElement('th', h));
     }
     thead.appendChild(headerRow);
     table.appendChild(thead);
 
     const tbody = createSafeElement('tbody');
-    for (const district of Object.keys(byUseDistrict)) {
-      const stats = byUseDistrict[district];
+    for (const g of ageGroups) {
       const row = createSafeElement('tr');
-      row.appendChild(createSafeElement('td', district));
-      row.appendChild(createSafeElement('td', stats.count + '件'));
-      row.appendChild(createSafeElement('td',
-        formatManYen(stats.tsubo_min) + '〜' + formatManYen(stats.tsubo_max) +
-        '（中央値 ' + formatManYen(stats.tsubo_median) + '）',
-      ));
-      let ikishu = '-';
-      if (stats.ikishu_median != null) {
-        ikishu = formatManYen(stats.ikishu_min ?? null) + '〜' + formatManYen(stats.ikishu_max ?? null) +
-          '（中央値 ' + formatManYen(stats.ikishu_median) + '）';
+      row.appendChild(createSafeElement('td', g.label));
+      if (g.count === 0) {
+        row.appendChild(createSafeElement('td', '0件'));
+        row.appendChild(createSafeElement('td', '-'));
+        row.appendChild(createSafeElement('td', '-'));
+        row.appendChild(createSafeElement('td', '-'));
+      } else {
+        row.appendChild(createSafeElement('td', g.count + '件'));
+        row.appendChild(createSafeElement('td', formatManYen(g.sqm_min) + '万円/㎡'));
+        row.appendChild(createSafeElement('td', formatManYen(g.sqm_max) + '万円/㎡'));
+        row.appendChild(createSafeElement('td', formatManYen(g.sqm_median) + '万円/㎡'));
       }
-      row.appendChild(createSafeElement('td', ikishu));
       tbody.appendChild(row);
     }
     table.appendChild(tbody);
     wrap.appendChild(table);
-    container.appendChild(wrap);
+    ageCurveContent.appendChild(wrap);
+  }
 
-    const noteEl = createSafeElement('p', '全体: ' +
-      (isBuilding ? '推定坪単価' : '坪単価') + ' 中央値 ' +
-      formatManYen(overall.tsubo_median) + '万円 (' + overall.count + '件)');
-    noteEl.className = 'data-note';
-    container.appendChild(noteEl);
+  // ─── レンダリング: 相場比較結果 ─────────────────
+  function renderCompareResult(cr: CompareResult): void {
+    compareResult.textContent = '';
 
-    if (details && details.length > 0) {
-      renderDetailTable(container, details, isBuilding);
+    const box = createSafeElement('div');
+    box.className = 'compare-result-box verdict-' + cr.verdict;
+
+    const verdictMessages: Record<string, { text: string; color: string }> = {
+      high: { text: '相場より高め（+20%超）', color: 'var(--red)' },
+      slightly_high: { text: 'やや高め（+10〜20%）', color: '#E65100' },
+      fair: { text: '相場並み（±10%以内）', color: 'var(--green-deep)' },
+      slightly_low: { text: 'やや安め（-10〜20%）', color: '#1565C0' },
+      low: { text: '相場より安め（-20%超）', color: '#1565C0' },
+      unknown: { text: '比較データ不足', color: 'var(--brown-light)' },
+    };
+
+    const vm = verdictMessages[cr.verdict] || verdictMessages.unknown;
+
+    const verdictEl = createSafeElement('div', vm.text);
+    verdictEl.style.fontSize = '18px';
+    verdictEl.style.fontWeight = '700';
+    verdictEl.style.color = vm.color;
+    verdictEl.style.marginBottom = '12px';
+    box.appendChild(verdictEl);
+
+    const userSqmEl = createSafeElement('div', '入力物件の㎡単価: ' + formatManYen(cr.user_sqm_price) + '万円/㎡');
+    userSqmEl.style.fontSize = '14px';
+    userSqmEl.style.marginBottom = '4px';
+    box.appendChild(userSqmEl);
+
+    if (cr.market_median != null) {
+      const marketEl = createSafeElement('div', '市場中央値（' + cr.age_group_label + '）: ' + formatManYen(cr.market_median) + '万円/㎡');
+      marketEl.style.fontSize = '14px';
+      marketEl.style.marginBottom = '4px';
+      box.appendChild(marketEl);
     }
 
-    if (count < 20 && citywideData && municipalityName) {
-      renderCitywideRef(container, citywideData.by_use_district, citywideData.overall, isBuilding, municipalityName);
+    if (cr.diff_ratio != null) {
+      const sign = cr.diff_ratio >= 0 ? '+' : '';
+      const diffEl = createSafeElement('div', '乖離率: ' + sign + (cr.diff_ratio * 100).toFixed(1) + '%');
+      diffEl.style.fontSize = '14px';
+      diffEl.style.marginBottom = '4px';
+      box.appendChild(diffEl);
     }
+
+    const sampleEl = createSafeElement('div', '比較サンプル数: ' + cr.sample_count + '件');
+    sampleEl.style.fontSize = '12px';
+    sampleEl.style.color = 'var(--brown-light)';
+    sampleEl.style.marginTop = '8px';
+    box.appendChild(sampleEl);
+
+    compareResult.appendChild(box);
   }
 
   // ─── メイン分析フロー ──────────────────────────
@@ -1085,49 +1114,32 @@ function init(): void {
       filtered = rawData;
     }
 
-    // 土地のみ → 用途地域フィルタ適用
-    let landOnly = filterByZoning(removeOutliers(calcTsuboStats(filtered)));
-    const landStats = summarizeByUseDistrict(landOnly);
-    const allLandStats = summarizeStats(landOnly);
+    // マンション取引を抽出
+    let mansionResults = calcMansionStats(filtered);
+    mansionResults = removeSqmOutliers(mansionResults);
+    // 用途地域フィルタ適用
+    mansionResults = filterByZoning(mansionResults);
 
-    // 建物込み → 用途地域フィルタ適用
-    let buildingLand = filterByZoning(removeOutliers(calcBuildingLandStats(filtered)));
-    const buildingStats = summarizeByUseDistrict(buildingLand);
-    const allBuildingStats = summarizeStats(buildingLand);
+    const overallStats = summarizeMansionStats(mansionResults);
+    const ageGroups = groupByAge(mansionResults);
+    const byFloorPlan = summarizeByFloorPlan(mansionResults);
 
-    // 市区町村全体（参考データ）→ 同じフィルタ適用
-    const citywideLand = filterByZoning(removeOutliers(calcTsuboStats(rawData)));
-    const citywideLandStats = summarizeByUseDistrict(citywideLand);
-    const citywideLandOverall = summarizeStats(citywideLand);
-    const citywideBuilding = filterByZoning(removeOutliers(calcBuildingLandStats(rawData)));
-    const citywideBuildingStats = summarizeByUseDistrict(citywideBuilding);
-    const citywideBuildingOverall = summarizeStats(citywideBuilding);
+    // 市区町村全体（参考データ）
+    let citywideResults = calcMansionStats(rawData);
+    citywideResults = removeSqmOutliers(citywideResults);
+    citywideResults = filterByZoning(citywideResults);
+    const citywideStats = summarizeMansionStats(citywideResults);
 
     return {
-      scopeLabel,
-      prefecture,
-      municipality,
-      district_name: districtName || '',
-      muni_cd: muniCd,
-      years,
-      total_records: rawData.length,
-      filtered_records: filtered.length,
-      land_only: {
-        count: landOnly.length,
-        by_use_district: landStats,
-        overall: allLandStats,
-        details: landOnly,
-      },
-      building_land: {
-        count: buildingLand.length,
-        by_use_district: buildingStats,
-        overall: allBuildingStats,
-        details: buildingLand,
-      },
-      citywide: {
-        land_only: { count: citywideLand.length, by_use_district: citywideLandStats, overall: citywideLandOverall },
-        building_land: { count: citywideBuilding.length, by_use_district: citywideBuildingStats, overall: citywideBuildingOverall },
-      },
+      scopeLabel, prefecture, municipality,
+      district_name: districtName || '', muni_cd: muniCd,
+      years, total_records: rawData.length,
+      mansion_count: mansionResults.length,
+      overall: overallStats,
+      age_groups: ageGroups,
+      by_floor_plan: byFloorPlan,
+      mansion_results: mansionResults,
+      citywide: { overall: citywideStats },
     };
   }
 
@@ -1145,7 +1157,7 @@ function init(): void {
     const municipality = await getCityName(apiKey, geo.muniCd);
     if (!municipality) throw new Error('市区町村名の取得に失敗しました');
 
-    const scopeLabel = prefecture + municipality + districtName + ' の相場';
+    const scopeLabel = prefecture + municipality + districtName + ' の中古マンション相場';
     return analyzeCore(apiKey, geo.muniCd, municipality, scopeLabel, districtName);
   }
 
@@ -1155,7 +1167,7 @@ function init(): void {
     if (!municipality) throw new Error('市区町村名の取得に失敗しました');
 
     const prefName = getPrefName(station.muni);
-    const scopeLabel = station.name + '駅周辺（' + prefName + municipality + '全体）の相場';
+    const scopeLabel = station.name + '駅周辺（' + prefName + municipality + '全体）の中古マンション相場';
     return analyzeCore(apiKey, station.muni, municipality, scopeLabel, null);
   }
 
@@ -1183,6 +1195,7 @@ function init(): void {
     }
 
     analyzeBtn.disabled = true;
+    compareBtn.disabled = true;
     loading.className = 'loading active';
     resultsEl.className = 'results';
 
@@ -1194,25 +1207,25 @@ function init(): void {
         result = await analyzeByStation(apiKey, selectedStation!);
       }
 
-      renderSummary(result);
+      const overall = result.overall as MansionStats;
+      const ageGroups = result.age_groups as AgeGroup[];
+      const byFloorPlan = result.by_floor_plan as Record<string, MansionStats>;
+      const mansionResults = result.mansion_results as MansionResult[];
+      const citywide = result.citywide as { overall: MansionStats };
+      const municipalityName = result.municipality as string;
 
-      const lo = result.land_only as {
-        by_use_district: Record<string, StatsSummary>;
-        overall: StatsSummary;
-        details: TsuboResult[];
-      };
-      const bl = result.building_land as {
-        by_use_district: Record<string, StatsSummary>;
-        overall: StatsSummary;
-        details: BuildingLandResult[];
-      };
-      const cw = result.citywide as {
-        land_only: { by_use_district: Record<string, StatsSummary>; overall: StatsSummary };
-        building_land: { by_use_district: Record<string, StatsSummary>; overall: StatsSummary };
-      };
+      // state 保存（相場比較で使う）
+      lastOverallStats = overall;
+      lastAgeGroups = ageGroups;
 
-      renderStatsTable(landOnlyContent, lo.by_use_district, lo.overall, false, lo.details, cw.land_only, result.municipality as string);
-      renderStatsTable(buildingLandContent, bl.by_use_district, bl.overall, true, bl.details, cw.building_land, result.municipality as string);
+      renderMansionSummary(result);
+      renderMarketDashboard(overall, byFloorPlan, mansionResults, citywide.overall, municipalityName);
+      renderAgeCurve(ageGroups);
+
+      // 相場比較フォームを有効化
+      compareHint.style.display = 'none';
+      compareForm.style.display = 'block';
+      compareBtn.disabled = false;
 
       loading.className = 'loading';
       resultsEl.className = 'results active';
@@ -1231,6 +1244,50 @@ function init(): void {
     }
 
     analyzeBtn.disabled = false;
+  });
+
+  compareBtn.addEventListener('click', function () {
+    if (!lastOverallStats) return;
+
+    const areaVal = parseFloat(compareAreaInput.value.trim());
+    const buildYearVal = parseInt(compareBuildYearInput.value.trim(), 10);
+    const floorPlanVal = compareFloorPlanInput.value.trim();
+    const priceVal = parseFloat(comparePriceInput.value.trim());
+
+    if (isNaN(areaVal) || areaVal <= 0) {
+      compareResult.textContent = '';
+      const errEl = createSafeElement('div', '面積を正しく入力してください');
+      errEl.className = 'status error';
+      errEl.style.display = 'block';
+      compareResult.appendChild(errEl);
+      return;
+    }
+    if (isNaN(buildYearVal) || buildYearVal < 1900 || buildYearVal > new Date().getFullYear()) {
+      compareResult.textContent = '';
+      const errEl = createSafeElement('div', '建築年（西暦）を正しく入力してください');
+      errEl.className = 'status error';
+      errEl.style.display = 'block';
+      compareResult.appendChild(errEl);
+      return;
+    }
+    if (isNaN(priceVal) || priceVal <= 0) {
+      compareResult.textContent = '';
+      const errEl = createSafeElement('div', '売出価格を正しく入力してください');
+      errEl.className = 'status error';
+      errEl.style.display = 'block';
+      compareResult.appendChild(errEl);
+      return;
+    }
+
+    const userInput: UserInput = {
+      area_m2: areaVal,
+      build_year: buildYearVal,
+      floor_plan: floorPlanVal,
+      asking_price: priceVal,
+    };
+
+    const cr = compareMansionPrice(userInput, lastOverallStats, lastAgeGroups);
+    renderCompareResult(cr);
   });
 
   addressInput.addEventListener('keydown', function (e) {
