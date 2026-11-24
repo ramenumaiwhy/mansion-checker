@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://msearch.gsi.go.jp https://mreversegeocoder.gsi.go.jp https://reinfolib-proxy.southern-a-22.workers.dev; style-src 'unsafe-inline'; script-src 'self'; font-src https://fonts.gstatic.com; img-src 'self' data:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://msearch.gsi.go.jp https://mreversegeocoder.gsi.go.jp; style-src 'unsafe-inline'; script-src 'self'; font-src https://fonts.gstatic.com; img-src 'self' data:;">
 <title>中古マンション相場診断</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -627,7 +627,7 @@
       <div class="input-row">
         <label for="apiKeyInput">国交省 不動産情報ライブラリ APIキー</label>
         <input type="password" id="apiKeyInput" placeholder="APIキーを入力してください">
-        <div class="input-hint">APIキーはこのブラウザにのみ保存されます。サーバーには送信されません。</div>
+        <div class="input-hint">APIキーはこのブラウザに保存されます。検証・検索時には、このアプリのプロキシを経由して国土交通省に送信されます。</div>
       </div>
       <div class="btn-group">
         <button class="btn btn-primary" id="saveKeyBtn">保存して検証</button>
@@ -740,10 +740,6 @@
             <input type="number" id="compareBuildYearInput" placeholder="例: 2005">
           </div>
           <div class="input-row">
-            <label for="compareFloorPlanInput">間取り</label>
-            <input type="text" id="compareFloorPlanInput" placeholder="例: 3LDK">
-          </div>
-          <div class="input-row">
             <label for="comparePriceInput">売出価格（万円）</label>
             <input type="number" id="comparePriceInput" placeholder="例: 4500">
           </div>
@@ -767,8 +763,9 @@
 
   <footer>
     中古マンション相場診断 &mdash;
-    <a href="https://github.com/ramenumaiwhy/reinfolib-service" target="_blank" rel="noopener">GitHub</a>
-  </footer>
+    <a href="https://github.com/ramenumaiwhy/mansion-checker" target="_blank" rel="noopener">GitHub</a>
+    <p>駅検索データは国土交通省「<a href="https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N02-2024.html">国土数値情報（鉄道データ）令和6年度</a>」を駅単位に集約し、市区町村コード・路線表記を加工したものです（<a href="https://creativecommons.org/licenses/by/4.0/deed.ja">CC BY 4.0</a>）。</p>
+</footer>
 </div>
 
 <script src="app.js"></script>

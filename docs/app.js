@@ -157,8 +157,7 @@
   function removeSqmOutliers(results) {
     const prices = results.map((r) => r.sqm_price);
     if (prices.length < 3) return results;
-    const sorted = [...prices].sort((a, b) => a - b);
-    const mid = sorted[Math.floor(sorted.length / 2)];
+    const mid = median(prices);
     return results.filter((r) => r.sqm_price >= mid / 5);
   }
   function calcMansionStats(items) {
@@ -235,7 +234,7 @@
     return summaries;
   }
   function compareMansionPrice(userInput, overallStats, ageGroups) {
-    var _a, _b, _c, _d;
+    var _a, _b;
     const userSqmPrice = userInput.asking_price * 1e4 / userInput.area_m2;
     const currentYear = (/* @__PURE__ */ new Date()).getFullYear();
     const userAge = currentYear - userInput.build_year;
@@ -243,6 +242,7 @@
     const ageGroupMedian = (_a = ageGroup == null ? void 0 : ageGroup.sqm_median) != null ? _a : null;
     const ageGroupLabel = (_b = ageGroup == null ? void 0 : ageGroup.label) != null ? _b : "\u4E0D\u660E";
     const compareMedian = ageGroupMedian != null ? ageGroupMedian : overallStats.sqm_median;
+    const sampleCount = ageGroup && ageGroupMedian != null ? ageGroup.count : overallStats.count;
     if (compareMedian == null || compareMedian <= 0) {
       return {
         user_sqm_price: userSqmPrice,
@@ -251,7 +251,7 @@
         verdict: "unknown",
         age_group_median: ageGroupMedian,
         age_group_label: ageGroupLabel,
-        sample_count: (_c = ageGroup == null ? void 0 : ageGroup.count) != null ? _c : 0
+        sample_count: sampleCount
       };
     }
     const diffRatio = (userSqmPrice - compareMedian) / compareMedian;
@@ -268,10 +268,9 @@
       verdict,
       age_group_median: ageGroupMedian,
       age_group_label: ageGroupLabel,
-      sample_count: (_d = ageGroup == null ? void 0 : ageGroup.count) != null ? _d : 0
+      sample_count: sampleCount
     };
   }
-  var PROXY_URL = "https://reinfolib-proxy.southern-a-22.workers.dev";
   var GSI_GEOCODER_URL = "https://msearch.gsi.go.jp/address-search/AddressSearch";
   var GSI_REVERSE_GEOCODER_URL = "https://mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress";
   var ZONING_DISPLAY_NAMES = {
@@ -309,7 +308,6 @@
     const compareForm = document.getElementById("compareForm");
     const compareAreaInput = document.getElementById("compareAreaInput");
     const compareBuildYearInput = document.getElementById("compareBuildYearInput");
-    const compareFloorPlanInput = document.getElementById("compareFloorPlanInput");
     const comparePriceInput = document.getElementById("comparePriceInput");
     const compareBtn = document.getElementById("compareBtn");
     const compareResult = document.getElementById("compareResult");
@@ -595,15 +593,24 @@
       saveKeyBtn.disabled = true;
       showStatus(apiKeyStatus, "info", "API\u30AD\u30FC\u3092\u691C\u8A3C\u4E2D...");
       try {
-        const resp = await fetch(PROXY_URL + "/api/XIT002?area=13", {
+        const resp = await fetch("/api/XIT002?area=13", {
+          redirect: "error",
           headers: { "Ocp-Apim-Subscription-Key": key }
         });
         if (resp.ok) {
-          setApiKey(key);
-          apiKeyInput.value = "";
-          apiKeyStatus.className = "status";
-          apiKeyStatus.textContent = "";
-          updateKeyUI();
+          const cities = await resp.json();
+          if (!Array.isArray(cities == null ? void 0 : cities.data) || !cities.data.some((city) => {
+            var _a;
+            return /^13\d{3}$/.test((_a = city == null ? void 0 : city.id) != null ? _a : "");
+          })) {
+            showStatus(apiKeyStatus, "error", "\u30D7\u30ED\u30AD\u30B7\u304B\u3089\u5E02\u533A\u753A\u6751\u4E00\u89A7\u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3002");
+          } else {
+            setApiKey(key);
+            apiKeyInput.value = "";
+            apiKeyStatus.className = "status";
+            apiKeyStatus.textContent = "";
+            updateKeyUI();
+          }
         } else if (resp.status === 401 || resp.status === 403) {
           showStatus(apiKeyStatus, "error", "API\u30AD\u30FC\u304C\u7121\u52B9\u3067\u3059\u3002\u6B63\u3057\u3044\u30AD\u30FC\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
         } else {
@@ -638,7 +645,8 @@
     }
     async function getCityName(apiKey, muniCd) {
       const prefCd = muniCd.substring(0, 2);
-      const resp = await fetch(PROXY_URL + "/api/XIT002?area=" + prefCd, {
+      const resp = await fetch("/api/XIT002?area=" + prefCd, {
+        redirect: "error",
         headers: { "Ocp-Apim-Subscription-Key": apiKey }
       });
       if (!resp.ok) throw new Error("\u5E02\u533A\u753A\u6751\u540D\u306E\u53D6\u5F97\u306B\u5931\u6557");
@@ -650,21 +658,25 @@
       return null;
     }
     async function fetchTransactions(apiKey, muniCd, years) {
-      let allData = [];
+      const batches = [];
       for (let i = 0; i < years.length; i++) {
         if (i > 0) await sleep(1e3);
         const resp = await fetch(
-          PROXY_URL + "/api/XIT001?year=" + years[i] + "&city=" + muniCd,
-          { headers: { "Ocp-Apim-Subscription-Key": apiKey } }
+          "/api/XIT001?year=" + years[i] + "&city=" + muniCd,
+          { redirect: "error", headers: { "Ocp-Apim-Subscription-Key": apiKey } }
         );
-        if (resp.status === 404) continue;
+        if (resp.status === 404) {
+          batches.push({ year: years[i], rows: null });
+          continue;
+        }
         if (!resp.ok) throw new Error("\u53D6\u5F15\u30C7\u30FC\u30BF\u53D6\u5F97\u30A8\u30E9\u30FC (year=" + years[i] + ")");
         const result = await resp.json();
-        if (result && result.data) {
-          allData = allData.concat(result.data);
+        if (!Array.isArray(result == null ? void 0 : result.data) || result.status && result.status !== "OK") {
+          throw new Error(years[i] + "\u5E74\u306E\u53D6\u5F15\u30C7\u30FC\u30BF\u3092\u78BA\u8A8D\u3067\u304D\u307E\u305B\u3093");
         }
+        batches.push({ year: years[i], rows: result.data });
       }
-      return allData;
+      return batches;
     }
     function getConfidence(count) {
       if (count >= 30) return { label: "\u4FE1\u983C\u5EA6: \u9AD8", cls: "confidence-high", note: "" };
@@ -691,7 +703,8 @@
       badge.style.display = "inline-flex";
       resultSummary.insertBefore(badge, h3.nextSibling);
       const items = [
-        { label: "\u5206\u6790\u5BFE\u8C61\u5E74", value: years.join(", "), unit: "" },
+        { label: "\u691C\u7D22\u3057\u305F\u5E74", value: years.join(", "), unit: "" },
+        { label: "\u5BFE\u8C61\u30A8\u30EA\u30A2\u306E\u96C6\u8A08\u5185\u8A33", value: String(result.coverage), unit: "" },
         { label: "\u53D6\u5F15\u4EF6\u6570\uFF08\u5168\u4F53\uFF09", value: String(totalRecords), unit: "\u4EF6" },
         { label: "\u30DE\u30F3\u30B7\u30E7\u30F3\u53D6\u5F15\u4EF6\u6570", value: String(mansionCount), unit: "\u4EF6" }
       ];
@@ -931,7 +944,8 @@
       userSqmEl.style.marginBottom = "4px";
       box.appendChild(userSqmEl);
       if (cr.market_median != null) {
-        const marketEl = createSafeElement("div", "\u5E02\u5834\u4E2D\u592E\u5024\uFF08" + cr.age_group_label + "\uFF09: " + formatManYen(cr.market_median) + "\u4E07\u5186/\u33A1");
+        const label = cr.age_group_median == null ? "\u5BFE\u8C61\u30A8\u30EA\u30A2\u5168\u4F53" : cr.age_group_label;
+        const marketEl = createSafeElement("div", "\u5E02\u5834\u4E2D\u592E\u5024\uFF08" + label + "\uFF09: " + formatManYen(cr.market_median) + "\u4E07\u5186/\u33A1");
         marketEl.style.fontSize = "14px";
         marketEl.style.marginBottom = "4px";
         box.appendChild(marketEl);
@@ -955,7 +969,11 @@
       const years = [currentYear, currentYear - 1, currentYear - 2];
       const prefecture = getPrefName(muniCd);
       setLoadingText("\u53D6\u5F15\u30C7\u30FC\u30BF\u3092\u53D6\u5F97\u4E2D\uFF083\u5E74\u5206\uFF09...");
-      const rawData = await fetchTransactions(apiKey, muniCd, years);
+      const batches = await fetchTransactions(apiKey, muniCd, years);
+      const rawData = batches.flatMap((batch) => {
+        var _a;
+        return (_a = batch.rows) != null ? _a : [];
+      });
       setLoadingText("\u30C7\u30FC\u30BF\u3092\u5206\u6790\u4E2D...");
       let filtered;
       if (districtName) {
@@ -973,6 +991,12 @@
       citywideResults = removeSqmOutliers(citywideResults);
       citywideResults = filterByZoning(citywideResults);
       const citywideStats = summarizeMansionStats(citywideResults);
+      const usedRows = new Set(mansionResults.map((row) => row.raw));
+      const coverage = batches.map(({ year, rows }) => {
+        if (rows === null) return year + "\u5E74 \u672A\u53D6\u5F97\uFF08404\uFF09";
+        if (!rows.length) return year + "\u5E74 \u5E02\u533A\u753A\u6751\u306E\u53D6\u5F150\u4EF6";
+        return year + "\u5E74 \u4E2D\u53E4\u30DE\u30F3\u30B7\u30E7\u30F3" + rows.filter((row) => usedRows.has(row)).length + "\u4EF6";
+      }).join(" \uFF0F ");
       return {
         scopeLabel,
         prefecture,
@@ -980,6 +1004,7 @@
         district_name: districtName || "",
         muni_cd: muniCd,
         years,
+        coverage,
         total_records: rawData.length,
         mansion_count: mansionResults.length,
         overall: overallStats,
@@ -1034,6 +1059,7 @@
       }
       analyzeBtn.disabled = true;
       compareBtn.disabled = true;
+      compareResult.replaceChildren();
       loading.className = "loading active";
       resultsEl.className = "results";
       try {
@@ -1080,7 +1106,6 @@
       if (!lastOverallStats) return;
       const areaVal = parseFloat(compareAreaInput.value.trim());
       const buildYearVal = parseInt(compareBuildYearInput.value.trim(), 10);
-      const floorPlanVal = compareFloorPlanInput.value.trim();
       const priceVal = parseFloat(comparePriceInput.value.trim());
       if (isNaN(areaVal) || areaVal <= 0) {
         compareResult.textContent = "";
@@ -1109,7 +1134,6 @@
       const userInput = {
         area_m2: areaVal,
         build_year: buildYearVal,
-        floor_plan: floorPlanVal,
         asking_price: priceVal
       };
       const cr = compareMansionPrice(userInput, lastOverallStats, lastAgeGroups);

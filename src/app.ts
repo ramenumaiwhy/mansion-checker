@@ -146,8 +146,7 @@ export function formatPrice(value: number | string | null | undefined): string {
 export function removeSqmOutliers(results: MansionResult[]): MansionResult[] {
   const prices = results.map(r => r.sqm_price);
   if (prices.length < 3) return results;
-  const sorted = [...prices].sort((a, b) => a - b);
-  const mid = sorted[Math.floor(sorted.length / 2)];
+  const mid = median(prices)!; // 3件以上あるため中央値は必ず存在する
   return results.filter(r => r.sqm_price >= mid / 5);
 }
 
@@ -252,6 +251,7 @@ export function compareMansionPrice(
 
   // 比較対象: 築年数グループの中央値があればそれ、なければ全体中央値
   const compareMedian = ageGroupMedian ?? overallStats.sqm_median;
+  const sampleCount = ageGroup && ageGroupMedian != null ? ageGroup.count : overallStats.count;
 
   if (compareMedian == null || compareMedian <= 0) {
     return {
@@ -261,7 +261,7 @@ export function compareMansionPrice(
       verdict: 'unknown',
       age_group_median: ageGroupMedian,
       age_group_label: ageGroupLabel,
-      sample_count: ageGroup?.count ?? 0,
+      sample_count: sampleCount,
     };
   }
 
@@ -280,7 +280,7 @@ export function compareMansionPrice(
     verdict,
     age_group_median: ageGroupMedian,
     age_group_label: ageGroupLabel,
-    sample_count: ageGroup?.count ?? 0,
+    sample_count: sampleCount,
   };
 }
 
@@ -288,7 +288,6 @@ export function compareMansionPrice(
 // Non-exported Constants（DOM コードのみで使用）
 // ═══════════════════════════════════════════════════════════
 
-const PROXY_URL = 'https://reinfolib-proxy.southern-a-22.workers.dev';
 const GSI_GEOCODER_URL = 'https://msearch.gsi.go.jp/address-search/AddressSearch';
 const GSI_REVERSE_GEOCODER_URL = 'https://mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress';
 
@@ -356,7 +355,6 @@ function init(): void {
   const compareForm = document.getElementById('compareForm') as HTMLElement;
   const compareAreaInput = document.getElementById('compareAreaInput') as HTMLInputElement;
   const compareBuildYearInput = document.getElementById('compareBuildYearInput') as HTMLInputElement;
-  const compareFloorPlanInput = document.getElementById('compareFloorPlanInput') as HTMLInputElement;
   const comparePriceInput = document.getElementById('comparePriceInput') as HTMLInputElement;
   const compareBtn = document.getElementById('compareBtn') as HTMLButtonElement;
   const compareResult = document.getElementById('compareResult') as HTMLElement;
@@ -668,15 +666,20 @@ function init(): void {
     saveKeyBtn.disabled = true;
     showStatus(apiKeyStatus, 'info', 'APIキーを検証中...');
     try {
-      const resp = await fetch(PROXY_URL + '/api/XIT002?area=13', {
-        headers: { 'Ocp-Apim-Subscription-Key': key },
+      const resp = await fetch('/api/XIT002?area=13', {
+        redirect: 'error', headers: { 'Ocp-Apim-Subscription-Key': key },
       });
       if (resp.ok) {
-        setApiKey(key);
-        apiKeyInput.value = '';
-        apiKeyStatus.className = 'status';
-        apiKeyStatus.textContent = '';
-        updateKeyUI();
+        const cities = await resp.json();
+        if (!Array.isArray(cities?.data) || !cities.data.some((city: {id?: string}) => /^13\d{3}$/.test(city?.id ?? ''))) {
+          showStatus(apiKeyStatus, 'error', 'プロキシから市区町村一覧を取得できません。');
+        } else {
+          setApiKey(key);
+          apiKeyInput.value = '';
+          apiKeyStatus.className = 'status';
+          apiKeyStatus.textContent = '';
+          updateKeyUI();
+        }
       } else if (resp.status === 401 || resp.status === 403) {
         showStatus(apiKeyStatus, 'error', 'APIキーが無効です。正しいキーを入力してください。');
       } else {
@@ -718,8 +721,8 @@ function init(): void {
   // ─── 市区町村名取得 ─────────────────────────────
   async function getCityName(apiKey: string, muniCd: string): Promise<string | null> {
     const prefCd = muniCd.substring(0, 2);
-    const resp = await fetch(PROXY_URL + '/api/XIT002?area=' + prefCd, {
-      headers: { 'Ocp-Apim-Subscription-Key': apiKey },
+    const resp = await fetch('/api/XIT002?area=' + prefCd, {
+      redirect: 'error', headers: { 'Ocp-Apim-Subscription-Key': apiKey },
     });
     if (!resp.ok) throw new Error('市区町村名の取得に失敗');
     const data = await resp.json();
@@ -731,22 +734,26 @@ function init(): void {
   }
 
   // ─── 取引データ取得 ─────────────────────────────
-  async function fetchTransactions(apiKey: string, muniCd: string, years: number[]): Promise<TransactionItem[]> {
-    let allData: TransactionItem[] = [];
+  async function fetchTransactions(apiKey: string, muniCd: string, years: number[]): Promise<{year: number; rows: TransactionItem[] | null}[]> {
+    const batches = [];
     for (let i = 0; i < years.length; i++) {
       if (i > 0) await sleep(1000);
       const resp = await fetch(
-        PROXY_URL + '/api/XIT001?year=' + years[i] + '&city=' + muniCd,
-        { headers: { 'Ocp-Apim-Subscription-Key': apiKey } },
+        '/api/XIT001?year=' + years[i] + '&city=' + muniCd,
+        { redirect: 'error', headers: { 'Ocp-Apim-Subscription-Key': apiKey } },
       );
-      if (resp.status === 404) continue;
+      if (resp.status === 404) {
+        batches.push({year: years[i], rows: null});
+        continue;
+      }
       if (!resp.ok) throw new Error('取引データ取得エラー (year=' + years[i] + ')');
       const result = await resp.json();
-      if (result && result.data) {
-        allData = allData.concat(result.data);
+      if (!Array.isArray(result?.data) || (result.status && result.status !== 'OK')) {
+        throw new Error(years[i] + '年の取引データを確認できません');
       }
+      batches.push({year: years[i], rows: result.data as TransactionItem[]});
     }
-    return allData;
+    return batches;
   }
 
   // ─── 信頼度判定 ──────────────────────────────────
@@ -782,7 +789,8 @@ function init(): void {
     resultSummary.insertBefore(badge, h3.nextSibling);
 
     const items: { label: string; value: string; unit: string }[] = [
-      { label: '分析対象年', value: years.join(', '), unit: '' },
+      { label: '検索した年', value: years.join(', '), unit: '' },
+      { label: '対象エリアの集計内訳', value: String(result.coverage), unit: '' },
       { label: '取引件数（全体）', value: String(totalRecords), unit: '件' },
       { label: 'マンション取引件数', value: String(mansionCount), unit: '件' },
     ];
@@ -1068,7 +1076,8 @@ function init(): void {
     box.appendChild(userSqmEl);
 
     if (cr.market_median != null) {
-      const marketEl = createSafeElement('div', '市場中央値（' + cr.age_group_label + '）: ' + formatManYen(cr.market_median) + '万円/㎡');
+      const label = cr.age_group_median == null ? '対象エリア全体' : cr.age_group_label;
+      const marketEl = createSafeElement('div', '市場中央値（' + label + '）: ' + formatManYen(cr.market_median) + '万円/㎡');
       marketEl.style.fontSize = '14px';
       marketEl.style.marginBottom = '4px';
       box.appendChild(marketEl);
@@ -1104,7 +1113,8 @@ function init(): void {
     const prefecture = getPrefName(muniCd);
 
     setLoadingText('取引データを取得中（3年分）...');
-    const rawData = await fetchTransactions(apiKey, muniCd, years);
+    const batches = await fetchTransactions(apiKey, muniCd, years);
+    const rawData = batches.flatMap(batch => batch.rows ?? []);
 
     setLoadingText('データを分析中...');
     let filtered: TransactionItem[];
@@ -1130,10 +1140,17 @@ function init(): void {
     citywideResults = filterByZoning(citywideResults);
     const citywideStats = summarizeMansionStats(citywideResults);
 
+    const usedRows = new Set(mansionResults.map(row => row.raw));
+    const coverage = batches.map(({year, rows}) => {
+      if (rows === null) return year + '年 未取得（404）';
+      if (!rows.length) return year + '年 市区町村の取引0件';
+      return year + '年 中古マンション' + rows.filter(row => usedRows.has(row)).length + '件';
+    }).join(' ／ ');
+
     return {
       scopeLabel, prefecture, municipality,
       district_name: districtName || '', muni_cd: muniCd,
-      years, total_records: rawData.length,
+      years, coverage, total_records: rawData.length,
       mansion_count: mansionResults.length,
       overall: overallStats,
       age_groups: ageGroups,
@@ -1196,6 +1213,7 @@ function init(): void {
 
     analyzeBtn.disabled = true;
     compareBtn.disabled = true;
+    compareResult.replaceChildren();
     loading.className = 'loading active';
     resultsEl.className = 'results';
 
@@ -1251,7 +1269,6 @@ function init(): void {
 
     const areaVal = parseFloat(compareAreaInput.value.trim());
     const buildYearVal = parseInt(compareBuildYearInput.value.trim(), 10);
-    const floorPlanVal = compareFloorPlanInput.value.trim();
     const priceVal = parseFloat(comparePriceInput.value.trim());
 
     if (isNaN(areaVal) || areaVal <= 0) {
@@ -1282,7 +1299,6 @@ function init(): void {
     const userInput: UserInput = {
       area_m2: areaVal,
       build_year: buildYearVal,
-      floor_plan: floorPlanVal,
       asking_price: priceVal,
     };
 

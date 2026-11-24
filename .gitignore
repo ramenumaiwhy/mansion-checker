@@ -6,3 +6,18 @@ dist/
 build/
 .env
 node_modules/
+
+# ローカルの画面比較資料
+/pixel-clone-capture/
+/debug-clone-sections3.mjs
+/docs/redfin-clone-app.html
+/docs/styles/7bc9b705f2389b9dbcce.css
+/docs/styles/8653b47d8e64870ecbb0.css
+/docs/styles/a33d19213b411112242a.css
+/docs/styles/ac16ebddb45d0b681ff9.css
+/docs/styles/ad6244aa47c294d506de.css
+/docs/styles/afca6be8713d87f3bc22.css
+/docs/styles/c8b535443aed1e329be5.css
+/docs/styles/ce39954efcab06a4ff54.css
+/docs/styles/f1a7d63961618790a831.css
+/workers/.wrangler/

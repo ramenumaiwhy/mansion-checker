@@ -67,7 +67,6 @@ export interface MansionStats {
 export interface UserInput {
   area_m2: number;
   build_year: number;
-  floor_plan: string;
   asking_price: number;      // 万円単位
 }
 

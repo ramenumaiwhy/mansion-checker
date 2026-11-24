@@ -1,5 +1,6 @@
 {
   "name": "mansion-checker",
+  "type": "module",
   "private": true,
   "scripts": {
     "build": "esbuild src/app.ts --bundle --outfile=docs/app.js --target=es2017 --format=iife",
@@ -9,9 +10,9 @@
     "dev": "esbuild src/app.ts --bundle --outfile=docs/app.js --target=es2017 --format=iife --watch"
   },
   "devDependencies": {
-    "esbuild": "^0.25.0",
-    "happy-dom": "^17.0.0",
+    "esbuild": "^0.28.2",
+    "happy-dom": "^21.0.4",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "vitest": "^5.1.1"
   }
 }

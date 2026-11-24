@@ -174,26 +174,26 @@ describe('removeSqmOutliers', () => {
   });
 
   test('中央値の1/5未満を除外する', () => {
-    // sqm_price: 800000, 900000, 1000000 → 中央値 = 900000
-    // 900000 / 5 = 180000 → 50000 は除外
+    // 4件の中央値は (800000 + 900000) / 2 = 850000
+    // 850000 / 5 = 170000 → 50000 は除外
     const results = [
       makeResult(800000),
       makeResult(900000),
       makeResult(1000000),
-      makeResult(50000),   // 180000未満 → 除外
+      makeResult(50000),   // 170000未満 → 除外
     ];
     const filtered = removeSqmOutliers(results);
     expect(filtered).toHaveLength(3);
-    expect(filtered.every(r => r.sqm_price >= 180000)).toBe(true);
+    expect(filtered.every(r => r.sqm_price >= 170000)).toBe(true);
   });
 
   test('閾値ちょうどは除外されない', () => {
-    // 中央値 = 900000, 閾値 = 180000
+    // 中央値 = 850000, 閾値 = 170000
     const results = [
       makeResult(800000),
       makeResult(900000),
       makeResult(1000000),
-      makeResult(180000),  // ちょうど閾値 → 除外されない
+      makeResult(170000),  // ちょうど閾値 → 除外されない
     ];
     const filtered = removeSqmOutliers(results);
     expect(filtered).toHaveLength(4);
@@ -505,14 +505,14 @@ describe('compareMansionPrice', () => {
 
   test('user_sqm_price = asking_price * 10000 / area_m2', () => {
     // 5000万円（asking_price=5000） / 70㎡ = 714285.71
-    const userInput: UserInput = { area_m2: 70, build_year: 2008, floor_plan: '3LDK', asking_price: 5000 };
+    const userInput: UserInput = { area_m2: 70, build_year: 2008, asking_price: 5000 };
     const result = compareMansionPrice(userInput, OVERALL_STATS, AGE_GROUPS);
     expect(result.user_sqm_price).toBeCloseTo(5000 * 10000 / 70, 0);
   });
 
   test('該当築年数グループの中央値と比較する', () => {
     // 2026-2008=18年 → 16〜20年グループ(sqm_median=600000)
-    const userInput: UserInput = { area_m2: 70, build_year: 2008, floor_plan: '3LDK', asking_price: 5000 };
+    const userInput: UserInput = { area_m2: 70, build_year: 2008, asking_price: 5000 };
     const result = compareMansionPrice(userInput, OVERALL_STATS, AGE_GROUPS);
     // age_group_median は 600000（16〜20年グループ）
     expect(result.age_group_median).toBe(600000);
@@ -522,7 +522,7 @@ describe('compareMansionPrice', () => {
     // user_sqm_price = 4000 * 10000 / 70 ≈ 571428
     // market_median = 400000 (31年以上グループ: 2026-1980=46年)
     // diff_ratio = (571428 - 400000) / 400000 ≈ 0.428 > 0.2 → high
-    const userInput: UserInput = { area_m2: 70, build_year: 1980, floor_plan: '3LDK', asking_price: 4000 };
+    const userInput: UserInput = { area_m2: 70, build_year: 1980, asking_price: 4000 };
     const groups = [...AGE_GROUPS];
     const result = compareMansionPrice(userInput, OVERALL_STATS, groups);
     expect(result.verdict).toBe('high');
@@ -532,7 +532,7 @@ describe('compareMansionPrice', () => {
     // market_median = 600000 (16〜20年グループ)
     // target user_sqm_price ≈ 690000 → diff_ratio ≈ 0.15 (> 0.1 but <= 0.2)
     // 690000 * 70 / 10000 = 4830万円
-    const userInput: UserInput = { area_m2: 70, build_year: 2008, floor_plan: '3LDK', asking_price: 4830 };
+    const userInput: UserInput = { area_m2: 70, build_year: 2008, asking_price: 4830 };
     const result = compareMansionPrice(userInput, OVERALL_STATS, AGE_GROUPS);
     expect(result.verdict).toBe('slightly_high');
   });
@@ -541,7 +541,7 @@ describe('compareMansionPrice', () => {
     // market_median = 600000 (16〜20年グループ)
     // user_sqm_price ≈ 600000 → diff_ratio ≈ 0 → fair
     // 600000 * 70 / 10000 = 4200万円
-    const userInput: UserInput = { area_m2: 70, build_year: 2008, floor_plan: '3LDK', asking_price: 4200 };
+    const userInput: UserInput = { area_m2: 70, build_year: 2008, asking_price: 4200 };
     const result = compareMansionPrice(userInput, OVERALL_STATS, AGE_GROUPS);
     expect(result.verdict).toBe('fair');
   });
@@ -550,7 +550,7 @@ describe('compareMansionPrice', () => {
     // market_median = 600000 (16〜20年グループ)
     // target user_sqm_price ≈ 510000 → diff_ratio ≈ -0.15 (>= -0.2 but < -0.1)
     // 510000 * 70 / 10000 = 3570万円
-    const userInput: UserInput = { area_m2: 70, build_year: 2008, floor_plan: '3LDK', asking_price: 3570 };
+    const userInput: UserInput = { area_m2: 70, build_year: 2008, asking_price: 3570 };
     const result = compareMansionPrice(userInput, OVERALL_STATS, AGE_GROUPS);
     expect(result.verdict).toBe('slightly_low');
   });
@@ -559,20 +559,17 @@ describe('compareMansionPrice', () => {
     // market_median = 600000 (16〜20年グループ)
     // user_sqm_price ≈ 400000 → diff_ratio ≈ -0.33 < -0.2 → low
     // 400000 * 70 / 10000 = 2800万円
-    const userInput: UserInput = { area_m2: 70, build_year: 2008, floor_plan: '3LDK', asking_price: 2800 };
+    const userInput: UserInput = { area_m2: 70, build_year: 2008, asking_price: 2800 };
     const result = compareMansionPrice(userInput, OVERALL_STATS, AGE_GROUPS);
     expect(result.verdict).toBe('low');
   });
 
   test('該当グループがない場合は全体中央値で比較', () => {
-    // build_year を現在より未来にして、どのグループにも当てはまらないケースを模擬
-    // → ageGroupsが空のケースで全体中央値を使うことを確認
-    const userInput: UserInput = { area_m2: 70, build_year: 2010, floor_plan: '3LDK', asking_price: 4900 };
+    const userInput: UserInput = { area_m2: 70, build_year: 2010, asking_price: 4900 };
     const result = compareMansionPrice(userInput, OVERALL_STATS, []);
     // グループなし → 全体中央値 700000 を使用
     expect(result.market_median).toBe(700000);
-    // グループなしの場合のlabelは実装依存（'不明'または''）
-    expect(['', '不明']).toContain(result.age_group_label);
+    expect(result.sample_count).toBe(OVERALL_STATS.count);
   });
 
   test('中央値がない(null)場合 → "unknown"', () => {
@@ -582,7 +579,7 @@ describe('compareMansionPrice', () => {
       sqm_max: null,
       sqm_median: null,
     };
-    const userInput: UserInput = { area_m2: 70, build_year: 2008, floor_plan: '3LDK', asking_price: 5000 };
+    const userInput: UserInput = { area_m2: 70, build_year: 2008, asking_price: 5000 };
     const result = compareMansionPrice(userInput, statsNoMedian, []);
     expect(result.verdict).toBe('unknown');
     expect(result.market_median).toBeNull();
@@ -591,14 +588,14 @@ describe('compareMansionPrice', () => {
 
   test('sample_count はage_group.countまたは全体count', () => {
     // 16〜20年グループのcount=3
-    const userInput: UserInput = { area_m2: 70, build_year: 2008, floor_plan: '3LDK', asking_price: 4200 };
+    const userInput: UserInput = { area_m2: 70, build_year: 2008, asking_price: 4200 };
     const result = compareMansionPrice(userInput, OVERALL_STATS, AGE_GROUPS);
     expect(result.sample_count).toBe(3);
   });
 
   test('age_group_label がグループのlabelに一致する', () => {
     // build_year=2008 → age=18 → "16〜20年"グループ
-    const userInput: UserInput = { area_m2: 70, build_year: 2008, floor_plan: '3LDK', asking_price: 4200 };
+    const userInput: UserInput = { area_m2: 70, build_year: 2008, asking_price: 4200 };
     const result = compareMansionPrice(userInput, OVERALL_STATS, AGE_GROUPS);
     expect(result.age_group_label).toBe('16〜20年');
   });
